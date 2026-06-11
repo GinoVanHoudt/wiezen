@@ -1,0 +1,24 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Public table/game document: visible to signed-in users (needed to join
+    // via invite code before being seated). Hands are never stored here.
+    match /tables/{code} {
+      allow read: if request.auth != null;
+      allow write: if false;
+
+      // Per-player private view (own hand). Only the owner may read.
+      match /private/{uid} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+
+      // Full authoritative engine state. Admin SDK only.
+      match /secret/{doc} {
+        allow read, write: if false;
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+lib/
+.angular/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+*.log
+.DS_Store
+.idea/
