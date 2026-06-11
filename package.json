@@ -1,0 +1,21 @@
+{
+  "name": "wiezen",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "functions"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:engine": "npm run test -w @wiezen/engine",
+    "build:web": "npm run build -w web",
+    "build:functions": "npm run build -w functions",
+    "emulators": "firebase emulators:start"
+  },
+  "devDependencies": {
+    "firebase-tools": "^15.20.0"
+  }
+}
