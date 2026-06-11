@@ -12,6 +12,9 @@ import { TableDoc } from '../core/types';
     <div class="lobby">
       <h2>Tafel {{ table().code }}</h2>
       <p class="hint">Deel deze code (of de link) met je medespelers.</p>
+      <button class="copy" (click)="copyLink()">
+        {{ copied() ? '✓ Link gekopieerd!' : '🔗 Kopieer uitnodigingslink' }}
+      </button>
 
       <ul class="players">
         @for (p of table().players; track p.uid) {
@@ -92,6 +95,13 @@ import { TableDoc } from '../core/types';
     }
     button.primary { background: #d4a017; color: #1d2b1f; font-weight: 700; }
     button:disabled { opacity: 0.5; cursor: default; }
+    button.copy {
+      align-self: center;
+      background: transparent;
+      border: 1px dashed rgba(255, 255, 255, 0.4);
+      font-size: 0.9rem;
+    }
+    button.copy:hover { border-style: solid; background: rgba(255, 255, 255, 0.08); }
     .error { color: #ff9d9d; }
   `,
 })
@@ -104,6 +114,7 @@ export class LobbyComponent {
   name = localStorage.getItem('wiezen-name') ?? '';
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
+  readonly copied = signal(false);
 
   protected readonly seated = computed(() =>
     this.table().players.some((p) => p.uid === this.fb.uid()),
@@ -112,6 +123,19 @@ export class LobbyComponent {
   protected readonly empty = computed(() =>
     Array.from({ length: 4 - this.table().players.length }, (_, i) => i),
   );
+
+  async copyLink(): Promise<void> {
+    const link = `${location.origin}/table/${this.table().code}`;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      // Clipboard API unavailable (e.g. non-secure context): fall back to a prompt.
+      window.prompt('Kopieer deze link:', link);
+      return;
+    }
+    this.copied.set(true);
+    setTimeout(() => this.copied.set(false), 2000);
+  }
 
   async join(): Promise<void> {
     localStorage.setItem('wiezen-name', this.name.trim());
