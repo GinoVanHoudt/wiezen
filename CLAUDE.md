@@ -50,9 +50,12 @@ Deploy: `npm run build && npx firebase deploy` (needs a real project config past
   "unhandled error".
 - The Firestore emulator needs Java; Homebrew's openjdk is keg-only:
   `export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"`.
-- `apps/web` and `functions` consume `@wiezen/engine` from its **built `dist/`**, not source.
-  After editing engine code, run `npm run build -w @wiezen/engine` or the change is invisible
-  to `ng serve` and the functions bundle.
+- `apps/web` resolves `@wiezen/engine` from **source** via a `paths` alias in
+  `apps/web/tsconfig.json`, so `ng serve` hot-reloads on engine edits (no rebuild needed).
+  A change to the alias itself requires one `ng serve` restart to take effect.
+- `functions` still consumes `@wiezen/engine` from its **built `dist/`** (esbuild inlines it
+  for clean deploys). After editing engine code, run `npm run build -w @wiezen/engine`
+  (or `npm run build -w functions`) or the change is invisible to the functions bundle/emulator.
 - Git workflow: commit and push **directly to `main`** — no feature branches or PRs (owner's preference).
 
 ## Architecture

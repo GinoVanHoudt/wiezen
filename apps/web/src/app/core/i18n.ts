@@ -339,7 +339,7 @@ export function actionLabel(i18n: I18n, action: Action): string {
     case 'meegaan':
       return `${i18n.t('bid.meegaan')} ${SUIT_GLYPH[action.suit]}`;
     case 'alleen':
-      return `${i18n.t('bid.alleen')} ${action.tricks}`;
+      return `${i18n.t('bid.alleen')} ${action.tricks} ${SUIT_GLYPH[action.suit]}`;
     case 'abondance':
       return `${i18n.t('bid.abondance')} ${action.tricks} ${SUIT_GLYPH[action.suit]}`;
     case 'miserie':

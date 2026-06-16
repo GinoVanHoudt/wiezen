@@ -12,7 +12,12 @@
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "ES2022",
-    "module": "preserve"
+    "module": "preserve",
+    "paths": {
+      // Resolve the engine from source so `ng serve` hot-reloads on engine edits.
+      // (The functions bundle still consumes the built dist/ — see CLAUDE.md.)
+      "@wiezen/engine": ["../../packages/engine/src/index.ts"]
+    }
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

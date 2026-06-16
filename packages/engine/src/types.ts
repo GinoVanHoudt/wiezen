@@ -43,7 +43,7 @@ export type Action =
   | { type: 'wachten' }
   | { type: 'vraag'; suit: Suit }
   | { type: 'meegaan'; suit: Suit } // join an open proposal; the level is computed (min to lead)
-  | { type: 'alleen'; tricks: number }
+  | { type: 'alleen'; tricks: number; suit: Suit } // go alone in this suit (own ask, or any held suit once nobody can partner)
   | { type: 'abondance'; tricks: number; suit: Suit }
   | { type: 'miserie'; variant: 'klein' | 'groot' | 'open' }
   | { type: 'piccolo' }

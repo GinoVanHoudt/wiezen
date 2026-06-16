@@ -195,8 +195,13 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
   }
 
   // vraag: only before any partnership forms and nothing else stands; one proposal per
-  // player; a suit already live cannot be re-proposed; not after wachten.
-  if (noPairYet && !highBid && !(a.waiting && seat === a.firstSpeaker)) {
+  // player; a suit already live cannot be re-proposed; not after wachten; and only while
+  // someone is still free to accept it — a proposal nobody is left to meegaan is pointless
+  // (e.g. the dealer speaking last after everyone else has passed or paired off).
+  const someoneCanAccept = SEATS.some(
+    (s) => s !== seat && !a.passed.includes(s) && !isCommitted(a, s),
+  );
+  if (noPairYet && !highBid && someoneCanAccept && !(a.waiting && seat === a.firstSpeaker)) {
     const proposedBefore = a.bids.some((b) => b.seat === seat && b.action.type === 'vraag');
     if (!proposedBefore) {
       const liveSuits = new Set(openProposals(a).map((p) => p.suit));
@@ -215,11 +220,23 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
     }
   }
 
-  // alleen: an unaccepted proposer who never found a partner may still go alone in the suit.
-  const own = openProposals(a).find((p) => p.seat === seat);
-  if (own) {
-    const level = minAlleenOver(highBid);
-    if (level !== null) actions.push({ type: 'alleen', tricks: level });
+  // alleen: go it alone (5-8 tricks). A fallback for a player who cannot partner —
+  // either your own ask found no taker (convert it to a solo in that suit), or every
+  // other seat is committed so no partnership is left for you (pick any suit you hold
+  // that nobody else has undertaken). RULES.md §2.3.
+  const ownProp = openProposals(a).find((p) => p.seat === seat);
+  const alleenLevel = minAlleenOver(highBid);
+  if (alleenLevel !== null) {
+    if (ownProp) {
+      actions.push({ type: 'alleen', tricks: alleenLevel, suit: ownProp.suit });
+    } else if (!someoneCanAccept) {
+      const takenSuits = new Set(proposalsOf(a).filter((p) => !p.dropped).map((p) => p.suit));
+      for (const suit of SUITS) {
+        if (!takenSuits.has(suit) && cardsOfSuit(hand, suit).length > 0) {
+          actions.push({ type: 'alleen', tricks: alleenLevel, suit });
+        }
+      }
+    }
   }
 
   // Negative contracts: outbid, or join an identical standing negative contract.
@@ -237,18 +254,34 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
     }
   }
 
-  // Abondance / solo slim: first speaking turn only, or raising one's own abondance in the same suit.
+  // Abondance: declarable on the first speaking turn (any held suit), as a raise of one's
+  // own standing abondance (same suit, 9→10→11→12), or — RULES.md §2.5 — by a solo player
+  // climbing past alleen 8, which forces a switch to abondance in the suit they went alone in.
   const ab = ownAbondance(a, seat);
+  const ownAlleenSuit =
+    a.high?.bid.kind === 'alleen' && a.high.seats.includes(seat) ? a.high.bid.suit! : undefined;
   const abSuits: Suit[] = ab
     ? [ab.suit!]
-    : firstTurn
-      ? SUITS.filter((s) => cardsOfSuit(hand, s).length > 0)
-      : [];
+    : ownAlleenSuit
+      ? [ownAlleenSuit]
+      : firstTurn
+        ? SUITS.filter((s) => cardsOfSuit(hand, s).length > 0)
+        : [];
   for (const suit of abSuits) {
     for (const tricks of [9, 10, 11, 12]) {
       const bid: Bid = { kind: 'abondance', tricks, suit };
       if (!highBid || bidRank(bid) > bidRank(highBid)) actions.push({ type: 'abondance', tricks, suit });
     }
+  }
+
+  // Solo slim: first speaking turn, or a standing abondance bidder raising in the same suit.
+  // A bare alleen cannot jump straight to slim — it must pass through abondance first (§2.3).
+  const slimSuits: Suit[] = ab
+    ? [ab.suit!]
+    : firstTurn
+      ? SUITS.filter((s) => cardsOfSuit(hand, s).length > 0)
+      : [];
+  for (const suit of slimSuits) {
     const slim: Bid = { kind: 'soloSlim', suit };
     if (!highBid || bidRank(slim) > bidRank(highBid)) actions.push({ type: 'soloSlim', suit });
   }
@@ -349,10 +382,11 @@ export function applyAuctionAction(state: GameState, seat: Seat, action: Action)
       break;
     }
     case 'alleen': {
+      // Either convert one's own unaccepted ask, or go alone fresh; legality (suit held,
+      // not undertaken, nobody left to partner) is already checked by assertLegal.
+      a.high = { bid: { kind: 'alleen', tricks: action.tricks, suit: action.suit }, seats: [seat] };
       const own = openProposals(a).find((p) => p.seat === seat);
-      if (!own) throw new GameError('no proposal to convert to alleen');
-      a.high = { bid: { kind: 'alleen', tricks: action.tricks, suit: own.suit }, seats: [seat] };
-      own.dropped = true;
+      if (own) own.dropped = true;
       break;
     }
     case 'abondance':

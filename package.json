@@ -13,7 +13,7 @@
     "test:engine": "npm run test -w @wiezen/engine",
     "build:web": "npm run build -w web",
     "build:functions": "npm run build -w functions",
-    "emulators": "firebase emulators:start"
+    "emulators": "firebase emulators:start --project demo-wiezen"
   },
   "devDependencies": {
     "firebase-tools": "^15.20.0"

@@ -85,8 +85,9 @@ function chooseBid(view: PlayerView, actions: Action[]): Action {
   if (vraag && best.length >= 5 && hcp >= 10) return vraag;
   if (vraag && best.length >= 6 && hcp >= 8) return vraag;
 
-  // Go alone only with a strong hand.
-  const alleen = find((a) => a.type === 'alleen');
+  // Go alone only with a strong hand, preferably in the best suit.
+  const alleen =
+    find((a) => a.type === 'alleen' && a.suit === best.suit) ?? find((a) => a.type === 'alleen');
   if (alleen && alleen.type === 'alleen' && alleen.tricks <= 6 && best.length >= 5 && hcp >= 12) return alleen;
 
   return { type: 'pass' };

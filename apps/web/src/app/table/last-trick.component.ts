@@ -69,17 +69,18 @@ interface TrickCardView {
     .caret { font-size: 0.6rem; opacity: 0.8; }
     /* A mini felt: cards laid out as the trick sat on the table, centred on the box. */
     .cards {
-      position: relative; width: 6.4rem; height: 7.2rem;
+      position: relative; width: 8rem; height: 9rem;
       background: rgba(0, 0, 0, 0.4); border-radius: 0.5rem;
       box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
     }
     .slot { position: absolute; top: 50%; left: 50%; border-radius: 0.4rem; }
     /* Each card is offset from the centre toward its player's edge (viewer at bottom),
-       overlapping into a pile so the play-order stacking (z-index) reads clearly. */
-    .slot.bottom { transform: translate(-50%, calc(-50% + 1.5rem)); }
-    .slot.top { transform: translate(-50%, calc(-50% - 1.5rem)); }
-    .slot.left { transform: translate(calc(-50% - 1.5rem), -50%); }
-    .slot.right { transform: translate(calc(-50% + 1.5rem), -50%); }
+       far enough that every card's rank corner clears its neighbours while the cards
+       still overlap into a pile so the play-order stacking (z-index) reads clearly. */
+    .slot.bottom { transform: translate(-50%, calc(-50% + 2.4rem)); }
+    .slot.top { transform: translate(-50%, calc(-50% - 2.4rem)); }
+    .slot.left { transform: translate(calc(-50% - 2.4rem), -50%); }
+    .slot.right { transform: translate(calc(-50% + 2.4rem), -50%); }
     /* The card that took the trick gets a gold ring. */
     .slot.winner { box-shadow: 0 0 0 2px #d4a017; }
   `,

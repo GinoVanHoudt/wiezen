@@ -31,9 +31,9 @@ describe('auction: vraag & meegaan', () => {
     // Back to the proposer: alleen in spades or pass.
     expect(s.auction.turn).toBe(1);
     const legal = legalActions(s, 1);
-    expect(legal).toContainEqual({ type: 'alleen', tricks: 5 });
+    expect(legal).toContainEqual({ type: 'alleen', tricks: 5, suit: 'S' });
     expect(legal.some((a) => a.type === 'vraag')).toBe(false);
-    s = act(s, 1, { type: 'alleen', tricks: 5 });
+    s = act(s, 1, { type: 'alleen', tricks: 5, suit: 'S' });
     expect(s.phase).toBe('playing');
     expect(s.contract!.bid).toEqual({ kind: 'alleen', tricks: 5, suit: 'S' });
     expect(s.contract!.declarers).toEqual([1]);
@@ -49,6 +49,82 @@ describe('auction: vraag & meegaan', () => {
     expect(s.doubleNext).toBe(true);
     expect(s.dealer).toBe(0); // same dealer redeals
     expect(JSON.stringify(s.hands)).not.toBe(handsBefore);
+  });
+
+  it('hides vraag for the last speaker once a pair has formed (nobody left to accept)', () => {
+    // Mirrors the screenshot: seat 1 asks ♥, seat 2 goes along, seat 3 passes, and the
+    // dealer (seat 0) speaks last. A samen proposal here could never be accepted, so it
+    // is not offered — but going solo still is, and it is not troel.
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'H' });
+    s = act(s, 2, { type: 'meegaan', suit: 'H' });
+    s = act(s, 3, { type: 'pass' });
+    expect(s.auction.turn).toBe(0);
+    expect(s.auction.troel).toBeUndefined();
+    const legal = legalActions(s, 0);
+    expect(legal.some((a) => a.type === 'vraag')).toBe(false);
+    expect(legal.some((a) => a.type === 'meegaan')).toBe(false); // the ask is already taken
+    expect(legal).toContainEqual({ type: 'pass' });
+    expect(legal.some((a) => a.type === 'abondance')).toBe(true); // solo still on the table
+  });
+
+  it('lets the last speaker go alleen once all others are committed (screenshot case)', () => {
+    // seat 1 asks ♥, seat 2 joins, seat 3 passes: the dealer never proposed but no
+    // partnership is left, so it may go alone in any held suit except the taken ♥.
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'H' });
+    s = act(s, 2, { type: 'meegaan', suit: 'H' });
+    s = act(s, 3, { type: 'pass' });
+    expect(s.auction.turn).toBe(0);
+    const legal = legalActions(s, 0);
+    const alleen = legal.filter((a) => a.type === 'alleen');
+    expect(alleen.length).toBeGreaterThan(0); // can go alone
+    expect(alleen.every((a) => a.type === 'alleen' && a.tricks === 5)).toBe(true); // min level beats samen 8
+    expect(alleen.some((a) => a.type === 'alleen' && a.suit === 'C')).toBe(true); // e.g. clubs
+    expect(alleen.some((a) => a.type === 'alleen' && a.suit === 'H')).toBe(false); // not the pair's suit
+    // Going alone outbids samen 8, so the hearts pair gets a raise decision; once they
+    // drop out the contract settles as the dealer's lone clubs solo.
+    s = act(s, 0, { type: 'alleen', tricks: 5, suit: 'C' });
+    expect(s.auction.high!.bid).toEqual({ kind: 'alleen', tricks: 5, suit: 'C' });
+    expect(s.auction.pending).toMatchObject({ seat: 2, kind: 'pairRaise', pairSeat: 1 });
+    s = act(s, 2, { type: 'parole' });
+    s = act(s, 1, { type: 'pass' }); // hearts pair drops out
+    expect(s.phase).toBe('playing');
+    expect(s.contract!.bid).toEqual({ kind: 'alleen', tricks: 5, suit: 'C' });
+    expect(s.contract!.declarers).toEqual([0]);
+    expect(s.contract!.trump).toBe('C');
+  });
+
+  it('does not offer alleen while a partnership is still possible', () => {
+    // First speaker, nobody committed yet: must try to partner first, no lone solo.
+    const s = stateWithHands(craftHands([[], [], [], []]), 0);
+    expect(s.auction.turn).toBe(1);
+    expect(legalActions(s, 1).some((a) => a.type === 'alleen')).toBe(false);
+  });
+
+  it('hides vraag for the last speaker when everyone else has passed', () => {
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'pass' });
+    s = act(s, 2, { type: 'pass' });
+    s = act(s, 3, { type: 'pass' });
+    expect(s.auction.turn).toBe(0);
+    const legal = legalActions(s, 0);
+    expect(legal.some((a) => a.type === 'vraag')).toBe(false); // no partner can ever accept
+    expect(legal).toContainEqual({ type: 'pass' }); // pass folds the round into a redeal
+    expect(legal.some((a) => a.type === 'abondance')).toBe(true);
+  });
+
+  it('still offers vraag while an open proposal keeps another seat live', () => {
+    // seat 1's ♥ ask is open and seats 2 & 3 passed; the dealer may still ask a new suit
+    // because the open proposer (seat 1) can come back round and accept it.
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'H' });
+    s = act(s, 2, { type: 'pass' });
+    s = act(s, 3, { type: 'pass' });
+    expect(s.auction.turn).toBe(0);
+    const legal = legalActions(s, 0);
+    expect(legal).toContainEqual({ type: 'meegaan', suit: 'H' });
+    expect(legal).toContainEqual({ type: 'vraag', suit: 'S' });
   });
 
   it('supports wachten: first speaker may still accept later', () => {
@@ -280,13 +356,54 @@ describe('auction: abondance', () => {
     expect(s.contract!.leader).toBe(3);
   });
 
-  it('abondance is only available on the first speaking turn', () => {
+  it('abondance cannot be converted from a still-open proposal', () => {
     let s = stateWithHands(craftHands([[], [], [], []]), 0);
     s = act(s, 1, { type: 'vraag', suit: 'H' });
     s = act(s, 2, { type: 'pass' });
     s = act(s, 3, { type: 'pass' });
     s = act(s, 0, { type: 'pass' });
-    // Proposer's second turn: no abondance anymore.
+    // Proposer's second turn with an open ask (not yet a solo): no abondance (§2.3).
     expect(legalActions(s, 1).some((a) => a.type === 'abondance')).toBe(false);
+  });
+
+  it('lets a standing solo bidder climb past alleen 8 into abondance (RULES.md §2.5)', () => {
+    // Mirrors the screenshot: a player going alone is repeatedly outbid by a raising samen
+    // pair. alleen caps at 8, so once the pair tops it the only way up is abondance in the
+    // same suit. The engine only ever offers the minimum alleen that retakes the lead, so
+    // the climb is a forced ping-pong: alleen 5/6/7/8 against the pair's samen 9/10/11/12.
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'H' }); // pair forms in hearts (seats 1 & 2)
+    s = act(s, 2, { type: 'meegaan', suit: 'H' });
+    s = act(s, 3, { type: 'pass' }); // dealer (seat 0) is last and nobody can partner it
+    const climb = (tricks: number) => {
+      expect(s.auction.turn).toBe(0);
+      s = act(s, 0, { type: 'alleen', tricks, suit: 'D' }); // go / re-raise alone in diamonds
+      expect(s.auction.pending).toMatchObject({ seat: 2, kind: 'pairRaise', pairSeat: 1 });
+      s = act(s, 2, { type: 'raise' }); // acceptor lifts the pair to retake the lead
+    };
+    climb(5); // alleen 5 → samen 9
+    // Once outbid, the solo may keep climbing alleen OR jump straight to abondance.
+    let legal = legalActions(s, 0);
+    expect(legal.some((a) => a.type === 'alleen')).toBe(true);
+    expect(legal).toContainEqual({ type: 'abondance', tricks: 9, suit: 'D' });
+    climb(6); // alleen 6 → samen 10
+    climb(7); // alleen 7 → samen 11
+    climb(8); // alleen 8 → samen 12
+    // Pair now sits at samen 12; alleen can no longer compete (caps at 8).
+    expect(s.auction.turn).toBe(0);
+    legal = legalActions(s, 0);
+    expect(legal.some((a) => a.type === 'alleen')).toBe(false);
+    expect(legal).toContainEqual({ type: 'abondance', tricks: 9, suit: 'D' }); // own suit...
+    expect(legal.some((a) => a.type === 'abondance' && a.suit !== 'D')).toBe(false); // ...only
+    expect(legal.some((a) => a.type === 'soloSlim')).toBe(false); // no straight jump to slim
+    // The solo switches to abondance and, once everyone else folds, wins it.
+    s = act(s, 0, { type: 'abondance', tricks: 9, suit: 'D' });
+    expect(s.auction.pending).toBeUndefined(); // samen 13 < abondance 9: pair cannot answer
+    s = act(s, 1, { type: 'pass' });
+    s = act(s, 2, { type: 'pass' });
+    expect(s.phase).toBe('playing');
+    expect(s.contract!.bid).toEqual({ kind: 'abondance', tricks: 9, suit: 'D' });
+    expect(s.contract!.declarers).toEqual([0]);
+    expect(s.contract!.leader).toBe(0); // abondance declarer leads
   });
 });

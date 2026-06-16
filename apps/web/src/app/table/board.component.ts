@@ -146,7 +146,7 @@ function chipFor(action: Action, i18n: I18n): ActionChip {
     case 'raise':
       return text(i18n.t('bid.raise'));
     case 'alleen':
-      return text(`${action.tricks}`);
+      return suited(action.suit, `${action.tricks}`);
     case 'piccolo':
       return text(i18n.t('bid.piccolo'));
     case 'miserie':
@@ -175,6 +175,8 @@ function bidParts(action: Action, i18n: I18n): { pre: string; suit: Suit | null;
       return { pre: i18n.t('bid.vraag'), suit: action.suit, post: '' };
     case 'meegaan':
       return { pre: i18n.t('bid.meegaan'), suit: action.suit, post: '' };
+    case 'alleen':
+      return { pre: `${i18n.t('bid.alleen')} ${action.tricks}`, suit: action.suit, post: '' };
     case 'abondance':
       return { pre: `${i18n.t('bid.abondance')} ${action.tricks}`, suit: action.suit, post: '' };
     case 'soloSlim':
