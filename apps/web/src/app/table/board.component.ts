@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
-import { Action, Card, Suit, bidLabel, legalActionsForView, suitOf } from '@wiezen/engine';
+import { Action, Card, Suit, legalActionsForView, suitOf } from '@wiezen/engine';
 import { ApiService } from '../core/api.service';
+import { I18n, actionLabel, contractName } from '../core/i18n';
 import { TableStore } from '../core/table-store.service';
 import { TableDoc } from '../core/types';
 import { CardComponent } from '../shared/card.component';
-import { SUIT_SYMBOL, actionLabel } from '../shared/cards';
+import { SUIT_SYMBOL } from '../shared/cards';
 
 interface SeatInfo {
   seat: number;
@@ -40,38 +41,39 @@ interface ActionGroup {
   chips: ActionChip[];
 }
 
-/** Contract families in bid-ladder order; empty groups are dropped at render time. */
-const GROUP_ORDER = ['Doorgeven', 'Troef kiezen', 'Samen', 'Alleen', 'Miserie', 'Abondance', 'Solo slim'];
+/** Contract families in bid-ladder order (stable ids; labels via i18n `group.*`).
+ *  Empty groups are dropped at render time. */
+const GROUP_ORDER = ['doorgeven', 'troef', 'samen', 'alleen', 'miserie', 'abondance', 'soloslim'];
 
 function groupOf(action: Action): string {
   switch (action.type) {
     case 'pass':
     case 'wachten':
     case 'parole':
-      return 'Doorgeven';
+      return 'doorgeven';
     case 'troelKeep':
     case 'troelSwitch':
-      return 'Troef kiezen';
+      return 'troef';
     case 'vraag':
     case 'meegaan':
     case 'raise':
-      return 'Samen';
+      return 'samen';
     case 'alleen':
-      return 'Alleen';
+      return 'alleen';
     case 'miserie':
     case 'piccolo':
-      return 'Miserie';
+      return 'miserie';
     case 'abondance':
-      return 'Abondance';
+      return 'abondance';
     case 'soloSlim':
-      return 'Solo slim';
+      return 'soloslim';
     default:
-      return 'Doorgeven';
+      return 'doorgeven';
   }
 }
 
-function chipFor(action: Action, trumpSuit: Suit | null = null): ActionChip {
-  const title = actionLabel(action);
+function chipFor(action: Action, i18n: I18n, trumpSuit: Suit | null = null): ActionChip {
+  const title = actionLabel(i18n, action);
   const suited = (suit: Suit, label = ''): ActionChip => ({
     action,
     label,
@@ -90,15 +92,16 @@ function chipFor(action: Action, trumpSuit: Suit | null = null): ActionChip {
   });
   switch (action.type) {
     case 'pass':
-      return text('Pas', 'ghost');
+      return text(i18n.t('bid.pass'), 'ghost');
     case 'wachten':
-      return text('Wachten', 'ghost');
+      return text(i18n.t('bid.wachten'), 'ghost');
     case 'parole':
-      return text('Passe parole', 'ghost');
+      return text(i18n.t('bid.parole'), 'ghost');
     case 'troelKeep':
-      return text('Troef houden');
+      return text(i18n.t('bid.troelKeep'));
     case 'meegaan': {
-      const base = action.tricks === 8 ? 'Meegaan' : `Meegaan ${action.tricks}`;
+      const base =
+        action.tricks === 8 ? i18n.t('bid.meegaan') : `${i18n.t('bid.meegaan')} ${action.tricks}`;
       if (!trumpSuit) return text(base, 'primary');
       return {
         action,
@@ -106,17 +109,23 @@ function chipFor(action: Action, trumpSuit: Suit | null = null): ActionChip {
         suitSym: SUIT_SYMBOL[trumpSuit],
         red: trumpSuit === 'H' || trumpSuit === 'D',
         variant: 'primary',
-        title: `${base} (troef ${SUIT_SYMBOL[trumpSuit]})`,
+        title: `${base} (${i18n.t('board.trumpWord')} ${SUIT_SYMBOL[trumpSuit]})`,
       };
     }
     case 'raise':
-      return text('Verhogen');
+      return text(i18n.t('bid.raise'));
     case 'alleen':
       return text(`${action.tricks}`);
     case 'piccolo':
-      return text('Piccolo');
+      return text(i18n.t('bid.piccolo'));
     case 'miserie':
-      return text(action.variant === 'klein' ? 'Kleine' : action.variant === 'groot' ? 'Grote' : 'Open');
+      return text(
+        action.variant === 'klein'
+          ? i18n.t('bid.miserieKleinShort')
+          : action.variant === 'groot'
+            ? i18n.t('bid.miserieGrootShort')
+            : i18n.t('bid.miserieOpenShort'),
+      );
     case 'vraag':
     case 'troelSwitch':
     case 'soloSlim':
@@ -129,55 +138,55 @@ function chipFor(action: Action, trumpSuit: Suit | null = null): ActionChip {
 }
 
 /** Split a bid label for the auction log so its suit can render as a mini card. */
-function bidParts(action: Action): { pre: string; suit: Suit | null; post: string } {
+function bidParts(action: Action, i18n: I18n): { pre: string; suit: Suit | null; post: string } {
   switch (action.type) {
     case 'vraag':
-      return { pre: 'Vraag', suit: action.suit, post: '' };
+      return { pre: i18n.t('bid.vraag'), suit: action.suit, post: '' };
     case 'abondance':
-      return { pre: `Abondance ${action.tricks}`, suit: action.suit, post: '' };
+      return { pre: `${i18n.t('bid.abondance')} ${action.tricks}`, suit: action.suit, post: '' };
     case 'soloSlim':
-      return { pre: 'Solo slim', suit: action.suit, post: '' };
+      return { pre: i18n.t('bid.soloSlim'), suit: action.suit, post: '' };
     case 'troelSwitch':
-      return { pre: 'Troef', suit: action.suit, post: '(9 slagen)' };
+      return { pre: i18n.t('bid.troefShort'), suit: action.suit, post: i18n.t('bid.troefSwitchSuffix') };
     default:
-      return { pre: actionLabel(action), suit: null, post: '' };
+      return { pre: actionLabel(i18n, action), suit: null, post: '' };
   }
 }
 
 /** One-line plain-language explanation of a contract for hover tooltips.
  *  Returns undefined for self-evident bids (pas/vraag/meegaan), which need none. */
-function contractExplain(action: Action): string | undefined {
+function contractExplain(action: Action, i18n: I18n): string | undefined {
   switch (action.type) {
     case 'pass':
     case 'vraag':
     case 'meegaan':
       return undefined;
     case 'wachten':
-      return 'Wachten: je bewaart het recht om straks een vraag te aanvaarden in plaats van nu zelf te bieden.';
+      return i18n.t('explain.wachten');
     case 'parole':
-      return 'Passe parole: je geeft de beslissing om te verhogen terug aan de vrager (enkel vanaf 11 slagen).';
+      return i18n.t('explain.parole');
     case 'raise':
-      return 'Verhogen: je belooft één slag meer om boven een tussenliggend bod te blijven.';
+      return i18n.t('explain.raise');
     case 'troelKeep':
-      return 'Troel: je houdt de opgelegde troef; samen met je partner moet je 8 slagen halen.';
+      return i18n.t('explain.troelKeep');
     case 'troelSwitch':
-      return 'Troel: je kiest zelf een andere troef; dan moeten jullie samen 9 slagen halen.';
+      return i18n.t('explain.troelSwitch');
     case 'alleen':
-      return `Alleen: je speelt in je eentje tegen de andere drie en moet ${action.tricks} slagen halen met je eigen troef.`;
+      return i18n.t('explain.alleen', { n: action.tricks });
     case 'abondance':
-      return `Abondance: alleen tegen de andere drie beloof je ${action.tricks} slagen met je eigen troef. Jij komt uit.`;
+      return i18n.t('explain.abondance', { n: action.tricks });
     case 'soloSlim':
-      return 'Solo slim: alleen tegen de andere drie beloof je álle 13 slagen met je eigen troef. Jij komt uit.';
+      return i18n.t('explain.soloSlim');
     case 'piccolo':
-      return 'Piccolo: je moet precies één slag halen, zonder troef.';
+      return i18n.t('explain.piccolo');
     case 'miserie':
       switch (action.variant) {
         case 'klein':
-          return 'Kleine miserie: je mag geen enkele slag halen. Iedereen legt eerst één kaart weg; zonder troef.';
+          return i18n.t('explain.miserieKlein');
         case 'groot':
-          return 'Grote miserie: je mag geen enkele van de 13 slagen halen, zonder troef.';
+          return i18n.t('explain.miserieGroot');
         default:
-          return 'Open miserie: je mag geen enkele slag halen en speelt met je kaarten open op tafel, zonder troef.';
+          return i18n.t('explain.miserieOpen');
       }
     default:
       return undefined;
@@ -201,7 +210,7 @@ function contractExplain(action: Action): string | undefined {
               @if (ci.trumpSym) {
                 <span class="mini-card" [class.red]="ci.trumpRed">{{ ci.trumpSym }}</span>
               } @else {
-                <span class="gold">zonder troef</span>
+                <span class="gold">{{ i18n.t('board.noTrump') }}</span>
               }
             </span>
           } @else {
@@ -220,9 +229,9 @@ function contractExplain(action: Action): string | undefined {
               <div class="player {{ s.position }}" [class.turn]="s.isTurn" [class.declarer]="s.isDeclarer">
                 <div class="name">
                   {{ s.name }}
-                  @if (s.isDealer) { <span class="badge">deler</span> }
+                  @if (s.isDealer) { <span class="badge">{{ i18n.t('board.dealer') }}</span> }
                 </div>
-                <div class="meta">{{ s.tricks }} slagen</div>
+                <div class="meta">{{ i18n.t('board.tricks', { n: s.tricks }) }}</div>
               </div>
             }
           }
@@ -251,9 +260,9 @@ function contractExplain(action: Action): string | undefined {
               <div class="player bottom" [class.turn]="s.isTurn" [class.declarer]="s.isDeclarer">
                 <div class="name">
                   {{ s.name }}
-                  @if (s.isDealer) { <span class="badge">deler</span> }
+                  @if (s.isDealer) { <span class="badge">{{ i18n.t('board.dealer') }}</span> }
                 </div>
-                <div class="meta">{{ s.tricks }} slagen</div>
+                <div class="meta">{{ i18n.t('board.tricks', { n: s.tricks }) }}</div>
               </div>
             }
           }
@@ -264,7 +273,7 @@ function contractExplain(action: Action): string | undefined {
             @if (actionGroups().length > 0) {
               @for (g of actionGroups(); track g.label) {
                 <div class="action-group">
-                  <span class="group-label">{{ g.label }}</span>
+                  <span class="group-label">{{ i18n.t('group.' + g.label) }}</span>
                   <div class="chips">
                     @for (c of g.chips; track $index) {
                       @if (c.suitBreak) { <span class="chip-divider" aria-hidden="true"></span> }
@@ -290,7 +299,7 @@ function contractExplain(action: Action): string | undefined {
           </div>
         }
         @if (v.phase === 'discard' && playableCards().size > 0) {
-          <div class="action-bar"><span class="waiting">Kies één kaart om weg te leggen (kleine miserie)</span></div>
+          <div class="action-bar"><span class="waiting">{{ i18n.t('board.discardPrompt') }}</span></div>
         }
 
         <div class="hand">
@@ -302,8 +311,8 @@ function contractExplain(action: Action): string | undefined {
         @if (v.phase === 'scored') {
           <div class="overlay">
             <div class="panel">
-              <h3>Deel {{ v.handNumber }} gespeeld</h3>
-              <p>{{ v.lastHandSummary }}</p>
+              <h3>{{ i18n.t('board.handPlayed', { n: v.handNumber }) }}</h3>
+              <p>{{ summaryText() }}</p>
               <table>
                 @for (s of seats(); track s.seat) {
                   <tr>
@@ -315,7 +324,7 @@ function contractExplain(action: Action): string | undefined {
                   </tr>
                 }
               </table>
-              <button class="primary" (click)="nextHand()" [disabled]="busy()">Volgend deel</button>
+              <button class="primary" (click)="nextHand()" [disabled]="busy()">{{ i18n.t('board.nextHand') }}</button>
             </div>
           </div>
         }
@@ -325,13 +334,15 @@ function contractExplain(action: Action): string | undefined {
         }
       </div>
     } @else {
-      <p class="center-msg">Kaarten laden…</p>
+      <p class="center-msg">{{ i18n.t('board.loadingCards') }}</p>
     }
   `,
   styles: `
     .board { display: flex; flex-direction: column; height: 100dvh; }
     .topbar {
       display: flex; align-items: center; gap: 1rem; padding: 0.5rem 1rem;
+      /* Reserve room on the right for the global language selector (fixed, top-right). */
+      padding-right: 3.5rem;
       background: rgba(0, 0, 0, 0.35); font-size: 0.9rem;
     }
     .contract { text-align: left; display: flex; align-items: center; gap: 0.4rem; }
@@ -461,6 +472,7 @@ function contractExplain(action: Action): string | undefined {
 export class BoardComponent {
   private api = inject(ApiService);
   private store = inject(TableStore);
+  protected readonly i18n = inject(I18n);
 
   readonly table = input.required<TableDoc>();
 
@@ -481,13 +493,13 @@ export class BoardComponent {
     for (const action of this.legal()) {
       if (action.type === 'play' || action.type === 'discard') continue;
       const group = groupOf(action);
-      const chip = chipFor(action, trumpSuit);
-      chip.explain = contractExplain(action);
+      const chip = chipFor(action, this.i18n, trumpSuit);
+      chip.explain = contractExplain(action, this.i18n);
       (buckets.get(group) ?? buckets.set(group, []).get(group)!).push(chip);
     }
     return GROUP_ORDER.filter((label) => buckets.has(label)).map((label) => {
       const chips = buckets.get(label)!;
-      if (label === 'Abondance') {
+      if (label === 'abondance') {
         let prevSuit: Suit | null = null;
         for (const c of chips) {
           const suit = c.action.type === 'abondance' ? c.action.suit : null;
@@ -564,12 +576,16 @@ export class BoardComponent {
     const v = this.view();
     if (!v?.contract) return null;
     const names = v.contract.declarers
-      .map((d) => this.table().players.find((p) => p.seat === d)?.name ?? `speler ${d + 1}`)
+      .map(
+        (d) =>
+          this.table().players.find((p) => p.seat === d)?.name ??
+          this.i18n.t('board.playerFallback', { n: d + 1 }),
+      )
       .join(' & ');
     return {
       names,
-      // Drop the " in <suit>" suffix — the troef card next to it already shows the suit.
-      contract: bidLabel({ ...v.contract.bid, suit: undefined }),
+      // The contract label carries no suit — the troef card next to it already shows the suit.
+      contract: contractName(this.i18n, v.contract.bid),
       trumpSym: v.contract.trump ? SUIT_SYMBOL[v.contract.trump] : null,
       trumpRed: v.contract.trump === 'H' || v.contract.trump === 'D',
     };
@@ -578,9 +594,10 @@ export class BoardComponent {
   protected readonly statusLine = computed(() => {
     const v = this.view();
     if (!v) return '';
-    if (v.phase === 'bidding') return v.doubleNext ? 'Bieden (dubbele punten!)' : 'Bieden';
-    if (v.phase === 'troelTrump') return 'Troel: partner kiest troef';
-    if (v.phase === 'discard') return 'Kleine miserie: iedereen legt een kaart weg';
+    if (v.phase === 'bidding')
+      return this.i18n.t(v.doubleNext ? 'board.status.biddingDouble' : 'board.status.bidding');
+    if (v.phase === 'troelTrump') return this.i18n.t('board.status.troelTrump');
+    if (v.phase === 'discard') return this.i18n.t('board.status.discard');
     return '';
   });
 
@@ -590,7 +607,7 @@ export class BoardComponent {
     if (!v) return '';
     const turn = v.phase === 'troelTrump' ? v.auction.troel?.partner : v.auction.turn;
     const name = t.players.find((p) => p.seat === turn)?.name ?? '…';
-    return `${name} is aan zet…`;
+    return this.i18n.t('board.waiting', { name });
   });
 
   protected readonly recentBids = computed(() => {
@@ -598,17 +615,69 @@ export class BoardComponent {
     const t = this.table();
     if (!v) return [];
     return v.auction.bids.slice(-6).map((b) => {
-      const name = t.players.find((p) => p.seat === b.seat)?.name ?? `speler ${b.seat + 1}`;
-      const parts = bidParts(b.action);
+      const name =
+        t.players.find((p) => p.seat === b.seat)?.name ??
+        this.i18n.t('board.playerFallback', { n: b.seat + 1 });
+      const parts = bidParts(b.action, this.i18n);
       return {
         name,
         pre: parts.pre,
         suitSym: parts.suit ? SUIT_SYMBOL[parts.suit] : '',
         red: parts.suit === 'H' || parts.suit === 'D',
         post: parts.post,
-        explain: contractExplain(b.action),
+        explain: contractExplain(b.action, this.i18n),
       };
     });
+  });
+
+  /** Localized one-line result of the last hand, rebuilt from structured view
+   *  data so it follows the selected language (the server-built `lastHandSummary`
+   *  is English-only and used only as a fallback). */
+  protected readonly summaryText = computed(() => {
+    const v = this.view();
+    const t = this.table();
+    if (!v?.contract || !v.play) return v?.lastHandSummary ?? '';
+    const contract = v.contract;
+    const bid = contract.bid;
+    const play = v.play;
+    const word = this.i18n.t('board.trickWord');
+    const label = contractName(this.i18n, bid);
+    const resultWord = (ok: boolean) =>
+      this.i18n.t(ok ? 'board.result.made' : 'board.result.down');
+
+    const made = (tricks: number): boolean => {
+      switch (bid.kind) {
+        case 'kleineMiserie':
+        case 'groteMiserie':
+        case 'openMiserie':
+          return tricks === 0;
+        case 'piccolo':
+          return tricks === 1;
+        case 'soloSlim':
+          return tricks === 13;
+        case 'alleen':
+        case 'abondance':
+          return tricks >= (bid.tricks ?? 0);
+        default: // samen / troel: total against the contract's required tricks
+          return tricks >= contract.tricksNeeded;
+      }
+    };
+
+    if (bid.kind === 'samen' || bid.kind === 'troel') {
+      const tricks = contract.declarers.reduce((sum: number, s) => sum + (play.tricksWon[s] ?? 0), 0);
+      return `${label}: ${tricks} ${word}, ${resultWord(made(tricks))}`;
+    }
+    // One or more lone declarers, each summarized independently.
+    const nameOf = (seat: number) =>
+      t.players.find((p) => p.seat === seat)?.name ??
+      this.i18n.t('board.playerFallback', { n: seat + 1 });
+    return contract.declarers
+      .map((d) => {
+        const tricks = play.tricksWon[d] ?? 0;
+        const who = contract.declarers.length > 1 ? `${nameOf(d)} — ` : '';
+        return `${who}${label}: ${tricks} ${word}, ${resultWord(made(tricks))}`;
+      })
+      .join('; ');
   });
 
   protected pickCard(card: Card): void {
@@ -632,7 +701,7 @@ export class BoardComponent {
     try {
       await fn();
     } catch (e) {
-      this.error.set(e instanceof Error ? e.message : 'Er ging iets mis');
+      this.error.set(e instanceof Error ? e.message : this.i18n.t('common.error'));
       setTimeout(() => this.error.set(null), 4000);
     } finally {
       this.busy.set(false);

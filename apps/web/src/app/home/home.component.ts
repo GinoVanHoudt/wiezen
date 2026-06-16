@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../core/api.service';
+import { I18n } from '../core/i18n';
 
 @Component({
   selector: 'app-home',
@@ -10,28 +11,28 @@ import { ApiService } from '../core/api.service';
   template: `
     <div class="home">
       <h1>Wiezen</h1>
-      <p class="subtitle">Kleurenwiezen online — met vrienden of tegen botten</p>
+      <p class="subtitle">{{ i18n.t('home.subtitle') }}</p>
 
       <label>
-        Jouw naam
-        <input [(ngModel)]="name" maxlength="20" placeholder="bv. Gino" />
+        {{ i18n.t('home.nameLabel') }}
+        <input [(ngModel)]="name" maxlength="20" [placeholder]="i18n.t('home.namePlaceholder')" />
       </label>
 
       <div class="actions">
         <button class="primary" (click)="create()" [disabled]="busy() || !name.trim()">
-          Nieuwe tafel
+          {{ i18n.t('home.newTable') }}
         </button>
 
         <div class="join">
           <input
             [(ngModel)]="code"
             maxlength="6"
-            placeholder="CODE"
+            [placeholder]="i18n.t('home.codePlaceholder')"
             class="code-input"
             (keyup.enter)="join()"
           />
           <button (click)="join()" [disabled]="busy() || !name.trim() || code.trim().length < 6">
-            Meedoen
+            {{ i18n.t('home.join') }}
           </button>
         </div>
       </div>
@@ -81,6 +82,7 @@ import { ApiService } from '../core/api.service';
 export class HomeComponent {
   private api = inject(ApiService);
   private router = inject(Router);
+  protected readonly i18n = inject(I18n);
 
   name = localStorage.getItem('wiezen-name') ?? '';
   code = '';
@@ -109,7 +111,7 @@ export class HomeComponent {
     try {
       await fn();
     } catch (e) {
-      this.error.set(e instanceof Error ? e.message : 'Er ging iets mis');
+      this.error.set(e instanceof Error ? e.message : this.i18n.t('common.error'));
     } finally {
       this.busy.set(false);
     }

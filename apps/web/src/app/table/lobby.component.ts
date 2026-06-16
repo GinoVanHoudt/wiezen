@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, signal } f
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../core/api.service';
 import { FirebaseService } from '../core/firebase.service';
+import { I18n } from '../core/i18n';
 import { TableDoc } from '../core/types';
 
 @Component({
@@ -10,10 +11,10 @@ import { TableDoc } from '../core/types';
   imports: [FormsModule],
   template: `
     <div class="lobby">
-      <h2>Tafel {{ table().code }}</h2>
-      <p class="hint">Deel deze code (of de link) met je medespelers.</p>
+      <h2>{{ i18n.t('lobby.table') }} {{ table().code }}</h2>
+      <p class="hint">{{ i18n.t('lobby.shareHint') }}</p>
       <button class="copy" (click)="copyLink()">
-        {{ copied() ? '✓ Link gekopieerd!' : '🔗 Kopieer uitnodigingslink' }}
+        {{ copied() ? i18n.t('lobby.copied') : i18n.t('lobby.copyLink') }}
       </button>
 
       <ul class="players">
@@ -21,35 +22,35 @@ import { TableDoc } from '../core/types';
           <li>
             <span class="seat">{{ p.seat + 1 }}</span>
             {{ p.name }}
-            @if (p.isBot) { <span class="tag">bot</span> }
-            @if (p.uid === table().hostUid) { <span class="tag host">host</span> }
+            @if (p.isBot) { <span class="tag">{{ i18n.t('lobby.tagBot') }}</span> }
+            @if (p.uid === table().hostUid) { <span class="tag host">{{ i18n.t('lobby.tagHost') }}</span> }
           </li>
         }
         @for (i of empty(); track i) {
-          <li class="open">vrije stoel</li>
+          <li class="open">{{ i18n.t('lobby.emptySeat') }}</li>
         }
       </ul>
 
       @if (!seated()) {
         <div class="join">
-          <input [(ngModel)]="name" maxlength="20" placeholder="Jouw naam" />
-          <button class="primary" (click)="join()" [disabled]="busy() || !name.trim()">Aan tafel</button>
+          <input [(ngModel)]="name" maxlength="20" [placeholder]="i18n.t('lobby.namePlaceholder')" />
+          <button class="primary" (click)="join()" [disabled]="busy() || !name.trim()">{{ i18n.t('lobby.sit') }}</button>
         </div>
       } @else if (isHost()) {
         <div class="host-actions">
           @if (table().players.length < 4) {
-            <button (click)="addBot()" [disabled]="busy()">+ Bot toevoegen</button>
+            <button (click)="addBot()" [disabled]="busy()">{{ i18n.t('lobby.addBot') }}</button>
           }
           <button
             class="primary"
             (click)="start()"
             [disabled]="busy() || table().players.length !== 4"
           >
-            Start het spel
+            {{ i18n.t('lobby.start') }}
           </button>
         </div>
       } @else {
-        <p class="hint">Wachten tot de host het spel start…</p>
+        <p class="hint">{{ i18n.t('lobby.waitingHost') }}</p>
       }
 
       @if (error()) {
@@ -108,6 +109,7 @@ import { TableDoc } from '../core/types';
 export class LobbyComponent {
   private api = inject(ApiService);
   private fb = inject(FirebaseService);
+  protected readonly i18n = inject(I18n);
 
   readonly table = input.required<TableDoc>();
 
@@ -130,7 +132,7 @@ export class LobbyComponent {
       await navigator.clipboard.writeText(link);
     } catch {
       // Clipboard API unavailable (e.g. non-secure context): fall back to a prompt.
-      window.prompt('Kopieer deze link:', link);
+      window.prompt(this.i18n.t('lobby.copyPrompt'), link);
       return;
     }
     this.copied.set(true);
@@ -156,7 +158,7 @@ export class LobbyComponent {
     try {
       await fn();
     } catch (e) {
-      this.error.set(e instanceof Error ? e.message : 'Er ging iets mis');
+      this.error.set(e instanceof Error ? e.message : this.i18n.t('common.error'));
     } finally {
       this.busy.set(false);
     }

@@ -2,12 +2,14 @@ import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { Unsubscribe, doc, onSnapshot } from 'firebase/firestore';
 import { PlayerView } from '@wiezen/engine';
 import { FirebaseService } from './firebase.service';
+import { I18n } from './i18n';
 import { TableDoc } from './types';
 
 /** Live Firestore listeners for one table, exposed as signals. */
 @Injectable({ providedIn: 'root' })
 export class TableStore {
   private fb = inject(FirebaseService);
+  private i18n = inject(I18n);
 
   private code = signal<string | null>(null);
   readonly table = signal<TableDoc | null>(null);
@@ -50,7 +52,7 @@ export class TableStore {
       doc(this.fb.firestore, 'tables', code),
       (snap) => {
         this.table.set((snap.data() as TableDoc | undefined) ?? null);
-        if (!snap.exists()) this.error.set('Table not found');
+        if (!snap.exists()) this.error.set(this.i18n.t('table.notFound'));
       },
       (e) => this.error.set(e.message),
     );

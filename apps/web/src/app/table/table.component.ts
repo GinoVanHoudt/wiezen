@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, computed, inject, input } from '@angular/core';
 import { TableStore } from '../core/table-store.service';
 import { FirebaseService } from '../core/firebase.service';
+import { I18n } from '../core/i18n';
 import { LobbyComponent } from './lobby.component';
 import { BoardComponent } from './board.component';
 
@@ -12,13 +13,13 @@ import { BoardComponent } from './board.component';
     @if (store.error(); as err) {
       <p class="center-msg">{{ err }}</p>
     } @else if (!table()) {
-      <p class="center-msg">Tafel laden…</p>
+      <p class="center-msg">{{ i18n.t('table.loading') }}</p>
     } @else if (table()!.status === 'lobby') {
       <app-lobby [table]="table()!" />
     } @else if (seated()) {
       <app-board [table]="table()!" />
     } @else {
-      <p class="center-msg">Dit spel is al bezig — je zit niet aan deze tafel.</p>
+      <p class="center-msg">{{ i18n.t('table.notSeated') }}</p>
     }
   `,
   styles: `
@@ -27,6 +28,7 @@ import { BoardComponent } from './board.component';
 })
 export class TableComponent implements OnDestroy {
   protected readonly store = inject(TableStore);
+  protected readonly i18n = inject(I18n);
   private fb = inject(FirebaseService);
 
   /** Route param (withComponentInputBinding). */
