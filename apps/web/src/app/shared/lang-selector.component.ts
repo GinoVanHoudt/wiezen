@@ -33,7 +33,6 @@ import { I18n, LANGS, LANG_CODE, Lang } from '../core/i18n';
     .lang {
       appearance: none;
       -webkit-appearance: none;
-      background: transparent;
       color: inherit;
       border: none;
       font: inherit;
@@ -41,14 +40,14 @@ import { I18n, LANGS, LANG_CODE, Lang } from '../core/i18n';
       letter-spacing: 0.06em;
       opacity: 0.6;
       cursor: pointer;
-      padding: 0.25rem 1.15rem 0.25rem 0.4rem;
+      padding: 0.25rem 1.25rem 0.25rem 0.4rem;
       border-radius: 0.35rem;
-      /* Caret drawn with a background image so it sits right after the code. */
-      background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
-        linear-gradient(135deg, currentColor 50%, transparent 50%);
-      background-position: right 0.5rem center, right 0.32rem center;
-      background-size: 0.32rem 0.32rem, 0.32rem 0.32rem;
+      /* Crisp chevron as an inline SVG — a CSS-gradient triangle aliases badly. */
+      background-color: transparent;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M1 1l3 3 3-3' fill='none' stroke='%23ece7d6' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
       background-repeat: no-repeat;
+      background-position: right 0.45rem center;
+      background-size: 0.5rem 0.35rem;
     }
     .lang:hover,
     .lang:focus-visible {

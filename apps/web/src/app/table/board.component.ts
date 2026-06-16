@@ -201,6 +201,14 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
     @if (view(); as v) {
       <div class="board">
         <header class="topbar">
+          <span class="scores">
+            @for (s of scoreboard(); track s.seat) {
+              <span class="score" [class.leader]="s.isLeader">
+                @if (s.isLeader) { <span class="crown" aria-hidden="true">👑</span> }
+                {{ s.name }}: {{ s.score }}
+              </span>
+            }
+          </span>
           @if (contractInfo(); as ci) {
             <span class="contract">
               <span class="gold">{{ ci.names }}</span>
@@ -216,11 +224,6 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
           } @else {
             <span class="contract">{{ statusLine() }}</span>
           }
-          <span class="scores">
-            @for (s of seatsByScore(); track s.seat) {
-              <span class="score">{{ s.name }}: {{ v.scores[s.seat] }}</span>
-            }
-          </span>
         </header>
 
         <div class="felt">
@@ -340,12 +343,13 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
   styles: `
     .board { display: flex; flex-direction: column; height: 100dvh; }
     .topbar {
-      display: flex; align-items: center; gap: 1rem; padding: 0.5rem 1rem;
-      /* Reserve room on the right for the global language selector (fixed, top-right). */
-      padding-right: 3.5rem;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+      gap: 1rem; padding: 0.5rem 1rem;
+      /* Scores fill the left column, the contract sits centred; the right column is
+         left empty for the global language selector (fixed, top-right). */
       background: rgba(0, 0, 0, 0.35); font-size: 0.9rem;
     }
-    .contract { text-align: left; display: flex; align-items: center; gap: 0.4rem; }
+    .contract { justify-self: center; display: flex; align-items: center; gap: 0.4rem; }
     .contract .gold { color: #d4a017; font-weight: 600; }
     .contract .sep { opacity: 0.45; }
     .mini-card {
@@ -356,7 +360,10 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
       color: #1c1c20; font-size: 0.95rem; line-height: 1;
     }
     .mini-card.red { color: #b3262e; }
-    .scores { display: flex; gap: 0.8rem; opacity: 0.9; margin-left: auto; }
+    .scores { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; opacity: 0.9; min-width: 0; }
+    .score { white-space: nowrap; }
+    .score.leader { font-weight: 600; }
+    .crown { margin-right: 0.1rem; }
     .felt { position: relative; flex: 1; min-height: 18rem; }
     .player {
       position: absolute; text-align: center; padding: 0.4rem 0.8rem; border-radius: 0.5rem;
@@ -555,7 +562,21 @@ export class BoardComponent {
       .sort((a, b) => a.seat - b.seat);
   });
 
-  protected readonly seatsByScore = computed(() => this.seats());
+  /** Header scoreboard ranked from most to least points, flagging the current
+   *  leader(s). No one leads while every score is still tied (e.g. all 0 before
+   *  the first hand). Ties break on seat order for a stable display. */
+  protected readonly scoreboard = computed(() => {
+    const v = this.view();
+    const t = this.table();
+    if (!v) return [];
+    const entries = t.players
+      .map((p) => ({ seat: p.seat, name: p.name, score: v.scores[p.seat] ?? 0 }))
+      .sort((a, b) => b.score - a.score || a.seat - b.seat);
+    const scores = entries.map((e) => e.score);
+    const max = Math.max(...scores);
+    const hasLead = max > Math.min(...scores);
+    return entries.map((e) => ({ ...e, isLeader: hasLead && e.score === max }));
+  });
 
   protected readonly trick = computed(() => {
     const v = this.view();
