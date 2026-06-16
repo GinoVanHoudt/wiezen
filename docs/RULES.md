@@ -53,6 +53,7 @@ Starting left of the dealer (or, if troel was announced, only bids that outrank 
 | **Accept** | *meegaan* ("go along") | Join a live proposal in that suit. Creates a 2-vs-2 partnership obligated to **8 tricks together** (*samen acht*) with the proposed suit as trump. |
 | **Bid a higher contract** | — | Declare any of the solo contracts in §2.3, subject to its conditions. |
 
+- **Several proposals can be live at once**: rather than joining an existing ask, a player may propose a *different* suit (a suit already on the table may not be re-proposed). A later player then chooses which ask to join, and two pairs can form and compete (§2.5).
 - A proposal that nobody accepts leaves the proposer the option to **go alone** (*alleen gaan*, §2.3) in that suit, or pass.
 - **If all four players pass** (*rondje pas*), see §6.1.
 
@@ -63,7 +64,7 @@ All contracts in one table. "Pair" = 2 vs 2; "alone" = 1 vs 3. Negative contract
 | Contract | Dutch | English | Tricks required | Who | Trump | Notes |
 |---|---|---|---|---|---|---|
 | Proposal & acceptance | *vraag en meegaan* (samen 8…13) | Ask & join | **8** together (raisable to 9, 10, 11, 12, 13) | Pair | Proposed suit | The standard partnership game. |
-| Going alone | *alleen (gaan)* | Solo | **5** (raisable to 6, 7, **max 8**) | Alone | Own suit | Only after one's proposal found no partner, the partnership was broken, or all others are committed. To take more than 8 tricks one must bid abondance. Some regions set the minimum at **6** instead of 5; some disallow solo-5 entirely. |
+| Going alone | *alleen (gaan)* | Solo | **5** (raisable to 6, 7, **max 8**) | Alone | Own suit | Only after one's proposal found no partner, or all others are committed. To take more than 8 tricks one must bid abondance. Some regions set the minimum at **6** instead of 5; some disallow solo-5 entirely. |
 | Small misère | *kleine miserie* | Small misère | **0** of 12 tricks | Alone (multiple declarers allowed) | **No trump** | Every player first discards **one card face down**; the hand is played with 12 cards. |
 | Piccolo | *piccolo* | Piccolo | **exactly 1** trick | Alone (multiple allowed) | **No trump** | Not played everywhere; optional contract. |
 | Troel | *troel / trull* | Troel | **8** (9 if partner switches trump) | Pair (forced partner) | Suit of 4th ace (or hearts with 4 aces) | Mandatory announcement with 3–4 aces; see §2.1. |
@@ -103,8 +104,8 @@ Each later entry **outbids** all earlier ones. This ladder (pagat.com; matched b
 
 If more than one contract is on the table, bidding continues clockwise among committed players until one highest contract remains:
 
-- A partnership may raise its trick target (samen 8 → 9 → … → 13) to outbid an interposed contract. The **acceptor** bids on behalf of the pair; they may bid the minimum needed, or **pass** (breaking the partnership — the proposer remains bound and may go alone in the suit or pass).
-- **Passe parole** (*pas parole*): when the partnership would need **11+ tricks**, the acceptor may hand the decision back to the proposer, who must take up the bid or pass. If the proposer passes, the acceptor remains bound (solo in the agreed suit, or pass). Some groups disallow passe parole.
+- A partnership may raise its trick target (samen 8 → 9 → … → 13) to outbid an interposed contract or a competing partnership. **This implementation's house rule** for who decides: the **acceptor** (the player who said *meegaan*) chooses first — either **raise** to the minimum level that retakes the lead, or **hand off** (*pas parole*) to the proposer. On a hand-off the **proposer** chooses to **raise** or to **pass**, and a pass **drops the whole pair out** of the auction. Those are the only options: the acceptor never passes directly, the hand-off happens at most once, and a dropped pair leaves **no bound solo** for the remaining partner. (This differs from the classic rule below, where the acceptor may pass to break the pair and passe parole is restricted to 11+ tricks.)
+- **Competing partnerships**: because several suits can be proposed at once (see §2.2), two pairs may both reach *samen*. Equal trick counts are decided by **suit rank** (♥ > ♦ > ♣ > ♠), so e.g. *samen 8 in hearts* leads over *samen 8 in spades*; the trailing pair must raise a level to retake the lead, escalating until one pair drops out or the ♥-over-♠ tie at *samen 13* settles it.
 - A solo player raises 5 → 6 → 7 → 8; beyond 8 they must switch to abondance.
 - Abondance raises within the same suit only (9 → 10 → 11 → 12 → solo slim).
 - **Misères and piccolo are not exclusive**: if several players bid the same misère, they all play it **simultaneously**, each scored independently. (Variant: some groups force the fourth player to join when three bid small misère.)
@@ -209,7 +210,7 @@ A widespread alternative scores small fixed amounts (overtricks/undertricks 1 po
 ### 6.3 Other edge cases
 
 - A proposal requires ≥1 card of the proposed suit; an acceptance requires a live proposal.
-- A broken partnership (acceptor passes during raising) leaves the proposer bound: solo in that suit or pass; the same applies in reverse after a failed *passe parole*.
+- When a partnership declines a raise (proposer passes after a hand-off), **the whole pair drops out** in this implementation — there is no bound solo for the remaining partner (see the §2.5 house rule).
 - A player may not bid solo in a suit already undertaken by another player, and may not open with solo while a partnership in that suit is still possible.
 - Abondance and solo slim can only be opened on a player's **first turn to speak** (no converting a failed proposal into abondance), except raising one's own abondance.
 - In *kleine miserie*, **all four players** discard one card face down before play (12-trick hand), regardless of how many declarers there are.

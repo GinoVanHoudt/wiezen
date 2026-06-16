@@ -13,7 +13,7 @@ describe('auction: vraag & meegaan', () => {
     expect(s.auction.turn).toBe(1);
     s = act(s, 1, { type: 'vraag', suit: 'H' });
     s = act(s, 2, { type: 'pass' });
-    s = act(s, 3, { type: 'meegaan', tricks: 8 });
+    s = act(s, 3, { type: 'meegaan', suit: 'H' });
     s = act(s, 0, { type: 'pass' });
     expect(s.phase).toBe('playing');
     expect(s.contract!.bid).toEqual({ kind: 'samen', tricks: 8, suit: 'H' });
@@ -59,9 +59,9 @@ describe('auction: vraag & meegaan', () => {
     s = act(s, 0, { type: 'pass' });
     expect(s.auction.turn).toBe(1);
     const legal = legalActions(s, 1);
-    expect(legal).toContainEqual({ type: 'meegaan', tricks: 8 });
+    expect(legal).toContainEqual({ type: 'meegaan', suit: 'C' });
     expect(legal.some((a) => a.type === 'vraag')).toBe(false);
-    s = act(s, 1, { type: 'meegaan', tricks: 8 });
+    s = act(s, 1, { type: 'meegaan', suit: 'C' });
     expect(s.phase).toBe('playing');
     expect(s.contract!.declarers.sort()).toEqual([1, 2]);
   });
@@ -72,24 +72,27 @@ describe('auction: raising and passe parole', () => {
     let s = stateWithHands(craftHands([[], [], [], []]), 0);
     s = act(s, 1, { type: 'vraag', suit: 'H' });
     s = act(s, 2, { type: 'pass' });
-    s = act(s, 3, { type: 'meegaan', tricks: 8 });
+    s = act(s, 3, { type: 'meegaan', suit: 'H' });
     s = act(s, 0, { type: 'miserie', variant: 'klein' });
     return s;
   }
 
-  it('gives the acceptor a raise / parole / pass decision when outbid', () => {
+  const levelOf = (s: GameState, proposer: Seat) =>
+    s.auction.proposals.find((p) => p.seat === proposer)?.level;
+
+  it('gives the acceptor a raise-or-hand-off decision when outbid (no direct pass)', () => {
     const s = pairOutbidByKleineMiserie();
-    expect(s.auction.pending).toEqual({ seat: 3, kind: 'pairRaise' });
+    expect(s.auction.pending).toMatchObject({ seat: 3, kind: 'pairRaise', pairSeat: 1 });
     const legal = legalActions(s, 3);
-    expect(legal).toContainEqual({ type: 'raise' });
-    expect(legal).toContainEqual({ type: 'parole' }); // min raise is samen 11
-    expect(legal).toContainEqual({ type: 'pass' });
+    expect(legal).toContainEqual({ type: 'raise' }); // min raise is samen 11 over kleine miserie
+    expect(legal).toContainEqual({ type: 'parole' });
+    expect(legal.some((a) => a.type === 'pass')).toBe(false);
   });
 
   it('raise lifts the partnership to samen 11 and wins if others pass', () => {
     let s = pairOutbidByKleineMiserie();
     s = act(s, 3, { type: 'raise' });
-    expect(s.auction.samenLevel).toBe(11);
+    expect(levelOf(s, 1)).toBe(11);
     // The kleine miserie bidder is active again and passes.
     s = act(s, 0, { type: 'pass' });
     expect(s.phase).toBe('playing');
@@ -97,42 +100,74 @@ describe('auction: raising and passe parole', () => {
     expect(s.contract!.declarers.sort()).toEqual([1, 3]);
   });
 
-  it('parole hands the decision to the proposer', () => {
+  it('parole hands the decision to the proposer, who can raise', () => {
     let s = pairOutbidByKleineMiserie();
     s = act(s, 3, { type: 'parole' });
-    expect(s.auction.pending).toEqual({ seat: 1, kind: 'parole' });
+    expect(s.auction.pending).toMatchObject({ seat: 1, kind: 'parole', pairSeat: 1 });
+    const legal = legalActions(s, 1);
+    expect(legal).toContainEqual({ type: 'raise' });
+    expect(legal).toContainEqual({ type: 'pass' });
     s = act(s, 1, { type: 'raise' });
-    expect(s.auction.samenLevel).toBe(11);
+    expect(levelOf(s, 1)).toBe(11);
     s = act(s, 0, { type: 'pass' });
     expect(s.contract!.bid.kind).toBe('samen');
     expect(s.contract!.bid.tricks).toBe(11);
   });
 
-  it('breaks the pair when the acceptor passes; proposer is bound to the suit', () => {
-    let s = pairOutbidByKleineMiserie();
-    s = act(s, 3, { type: 'pass' });
-    // Proposer (seat 1) is bound: alleen in hearts (min level 8 over kleine miserie) or pass.
-    expect(s.auction.turn).toBe(1);
-    const legal = legalActions(s, 1);
-    expect(legal).toContainEqual({ type: 'alleen', tricks: 8 });
-    s = act(s, 1, { type: 'pass' });
-    expect(s.phase).toBe('discard'); // kleine miserie won
-    expect(s.contract!.bid.kind).toBe('kleineMiserie');
-    expect(s.contract!.declarers).toEqual([0]);
-  });
-
-  it('binds the acceptor when the proposer declines after parole', () => {
+  it('drops the pair out entirely when the proposer passes after a hand-off', () => {
     let s = pairOutbidByKleineMiserie();
     s = act(s, 3, { type: 'parole' });
     s = act(s, 1, { type: 'pass' });
-    expect(s.auction.turn).toBe(3);
-    const legal = legalActions(s, 3);
-    expect(legal).toContainEqual({ type: 'alleen', tricks: 8 });
-    s = act(s, 3, { type: 'alleen', tricks: 8 });
-    s = act(s, 0, { type: 'pass' });
+    // No bound-solo: the pair is fully out and the kleine miserie wins.
+    expect(s.phase).toBe('discard');
+    expect(s.contract!.bid.kind).toBe('kleineMiserie');
+    expect(s.contract!.declarers).toEqual([0]);
+  });
+});
+
+describe('auction: competing proposals', () => {
+  const levelOf = (s: GameState, proposer: Seat) =>
+    s.auction.proposals.find((p) => p.seat === proposer)?.level;
+
+  it('lets a player propose a different suit while a proposal is open', () => {
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'D' }); // mirrors the screenshot: a bot asks ♦
+    const legal = legalActions(s, 2);
+    expect(legal).toContainEqual({ type: 'meegaan', suit: 'D' }); // join the diamonds ask
+    expect(legal).toContainEqual({ type: 'vraag', suit: 'H' }); // or ask another suit
+    expect(legal).toContainEqual({ type: 'vraag', suit: 'C' });
+    expect(legal).toContainEqual({ type: 'vraag', suit: 'S' });
+    expect(legal.some((a) => a.type === 'vraag' && a.suit === 'D')).toBe(false); // not the live suit
+  });
+
+  it('forms two pairs and the higher suit wins the tie at equal level', () => {
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'S' });
+    s = act(s, 2, { type: 'vraag', suit: 'H' });
+    s = act(s, 3, { type: 'meegaan', suit: 'S' }); // pair(1,3) spades 8 leads
+    expect(levelOf(s, 1)).toBe(8);
+    s = act(s, 0, { type: 'meegaan', suit: 'H' }); // pair(0,2) hearts 8 — beats spades by suit at level 8
+    expect(levelOf(s, 2)).toBe(8);
+    // The trailing spades pair must decide, acceptor (seat 3) first.
+    expect(s.auction.pending).toMatchObject({ seat: 3, kind: 'pairRaise', pairSeat: 1 });
+    s = act(s, 3, { type: 'parole' });
+    s = act(s, 1, { type: 'pass' }); // spades pair drops out entirely
     expect(s.phase).toBe('playing');
-    expect(s.contract!.bid).toEqual({ kind: 'alleen', tricks: 8, suit: 'H' });
-    expect(s.contract!.declarers).toEqual([3]);
+    expect(s.contract!.bid).toEqual({ kind: 'samen', tricks: 8, suit: 'H' });
+    expect(s.contract!.declarers.sort()).toEqual([0, 2]);
+  });
+
+  it('lets the trailing pair raise to retake the lead (raise-war ping-pong)', () => {
+    let s = stateWithHands(craftHands([[], [], [], []]), 0);
+    s = act(s, 1, { type: 'vraag', suit: 'S' });
+    s = act(s, 2, { type: 'vraag', suit: 'H' });
+    s = act(s, 3, { type: 'meegaan', suit: 'S' }); // pair(1,3) spades 8
+    s = act(s, 0, { type: 'meegaan', suit: 'H' }); // pair(0,2) hearts 8 leads
+    expect(s.auction.pending).toMatchObject({ seat: 3, kind: 'pairRaise', pairSeat: 1 });
+    s = act(s, 3, { type: 'raise' }); // spades 9 beats hearts 8
+    expect(levelOf(s, 1)).toBe(9);
+    // Now the hearts pair must decide.
+    expect(s.auction.pending).toMatchObject({ seat: 0, kind: 'pairRaise', pairSeat: 2 });
   });
 });
 
@@ -232,7 +267,7 @@ describe('auction: abondance', () => {
   it('abondance beats samen, declarer leads', () => {
     let s = stateWithHands(craftHands([[], [], [], []]), 0);
     s = act(s, 1, { type: 'vraag', suit: 'H' });
-    s = act(s, 2, { type: 'meegaan', tricks: 8 });
+    s = act(s, 2, { type: 'meegaan', suit: 'H' });
     s = act(s, 3, { type: 'abondance', tricks: 9, suit: 'D' });
     // Pair cannot raise over abondance (samen 13 < abondance 9): no pending decision.
     expect(s.auction.pending).toBeUndefined();

@@ -1,5 +1,5 @@
-import { bidRank, isJoinable, minAlleenOver, minSamenOver } from './bids.js';
-import { card, cardsOfSuit, dealHands, nextSeat, rankOf, suitOf } from './cards.js';
+import { beats, bidRank, isJoinable, minAlleenOver, minSamenToLead } from './bids.js';
+import { card, cardsOfSuit, dealHands, nextSeat, rankOf, suitOf, SUITS } from './cards.js';
 import {
   Action,
   Auction,
@@ -18,21 +18,42 @@ import {
  * Engine simplifications, documented against RULES.md:
  * - Troel is declared automatically at deal time (declaration is mandatory anyway).
  * - Troel caller/partner do not overcall their own troel.
- * - A vraag (proposal) is only allowed while no bid stands yet; each player may propose once.
- * - meegaan and raises always commit to the minimum level that outbids the standing bid.
+ * - Each player may propose (vraag) at most once; a suit already live cannot be re-proposed.
+ *   New proposals are only allowed before any partnership is accepted; once a pair forms
+ *   the other still-open proposals can be joined (forming a competing pair) but no new
+ *   suits may be introduced.
+ * - Raise mechanic (house rule, RULES.md §2.5): when a pair must raise, the acceptor
+ *   chooses to raise or to hand off to the proposer (parole); the proposer then chooses
+ *   to raise or to pass. A pass drops the pair out entirely (no bound-solo).
  */
 
-interface ProposalExt {
-  seat: Seat;
-  suit: Suit;
-  acceptedBy?: Seat;
-  /** Partnership dissolved during raising; boundSeat may still go alleen in the suit. */
-  broken?: boolean;
-  boundSeat?: Seat;
+type Prop = Auction['proposals'][number];
+
+function proposalsOf(a: Auction): Prop[] {
+  return a.proposals;
 }
 
-function proposalOf(a: Auction): ProposalExt | undefined {
-  return a.proposal as ProposalExt | undefined;
+/** Proposals still seeking a partner (not yet accepted, not dropped). */
+function openProposals(a: Auction): Prop[] {
+  return proposalsOf(a).filter((p) => p.acceptedBy === undefined && !p.dropped);
+}
+
+/** Standing partnerships (accepted and still live). At most two can coexist. */
+function acceptedPairs(a: Auction): Prop[] {
+  return proposalsOf(a).filter((p) => p.acceptedBy !== undefined && !p.dropped);
+}
+
+/** A live proposal keyed by its proposer seat (one proposal per player). */
+function propBySeat(a: Auction, seat: Seat): Prop | undefined {
+  return proposalsOf(a).find((p) => p.seat === seat && !p.dropped);
+}
+
+function samenBidOf(p: Prop): Bid {
+  return { kind: 'samen', tricks: p.level!, suit: p.suit };
+}
+
+function isCommitted(a: Auction, seat: Seat): boolean {
+  return acceptedPairs(a).some((p) => p.seat === seat || p.acceptedBy === seat);
 }
 
 /** Detect mandatory troel in the dealt hands. */
@@ -68,7 +89,7 @@ export function startAuction(hands: Card[][], dealer: Seat): Auction {
     passed: [],
     spokenOnce: [],
     waiting: false,
-    samenLevel: 0,
+    proposals: [],
     bids: [],
     troel,
   };
@@ -81,16 +102,25 @@ export function startAuction(hands: Card[][], dealer: Seat): Auction {
   return auction;
 }
 
-/** The bid currently to beat: standing samen partnership or the high solo/negative bid. */
+/** The bid currently to beat across all standing partnerships and the solo/negative high. */
 export function effectiveHigh(a: Auction): { bid: Bid; seats: Seat[] } | undefined {
-  const p = proposalOf(a);
-  const samen: { bid: Bid; seats: Seat[] } | undefined =
-    p?.acceptedBy !== undefined && !p.broken && a.samenLevel >= 8
-      ? { bid: { kind: 'samen', tricks: a.samenLevel, suit: p.suit }, seats: [p.seat, p.acceptedBy] }
-      : undefined;
-  if (!samen) return a.high;
-  if (!a.high) return samen;
-  return bidRank(samen.bid) > bidRank(a.high.bid) ? samen : a.high;
+  let best = a.high;
+  for (const p of acceptedPairs(a)) {
+    const cand = { bid: samenBidOf(p), seats: [p.seat, p.acceptedBy!] };
+    if (!best || beats(cand.bid, best.bid)) best = cand;
+  }
+  return best;
+}
+
+/** The bid to beat for `pairSeat`'s pair: everything except that pair's own samen bid. */
+function highExcludingPair(a: Auction, pairSeat: Seat): Bid | undefined {
+  let best = a.high?.bid;
+  for (const p of acceptedPairs(a)) {
+    if (p.seat === pairSeat) continue;
+    const bid = samenBidOf(p);
+    if (!best || beats(bid, best)) best = bid;
+  }
+  return best;
 }
 
 function isHighHolder(a: Auction, seat: Seat): boolean {
@@ -130,7 +160,6 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
   const a = state.auction;
   if (a.turn !== seat) return [];
   const actions: Action[] = [];
-  const p = proposalOf(a);
   const high = effectiveHigh(a);
   const highBid = high?.bid;
   const hand = state.hands[seat]!;
@@ -138,17 +167,17 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
   // Pending decisions replace the normal options.
   if (a.pending) {
     if (a.pending.seat !== seat) return [];
-    const minLevel = minSamenOver(a.high?.bid);
+    const pair = a.pending.pairSeat !== undefined ? propBySeat(a, a.pending.pairSeat) : undefined;
+    const canRaise = pair ? minSamenToLead(pair.suit, highExcludingPair(a, pair.seat)) !== null : false;
     if (a.pending.kind === 'pairRaise') {
-      if (minLevel !== null) {
-        actions.push({ type: 'raise' });
-        if (minLevel >= 11) actions.push({ type: 'parole' });
-      }
-      actions.push({ type: 'pass' });
+      // Acceptor: raise, or hand the decision to the proposer. (No direct pass.)
+      if (canRaise) actions.push({ type: 'raise' });
+      actions.push({ type: 'parole' });
       return actions;
     }
     if (a.pending.kind === 'parole') {
-      if (minLevel !== null) actions.push({ type: 'raise' });
+      // Proposer: raise, or pass (which drops the pair out).
+      if (canRaise) actions.push({ type: 'raise' });
       actions.push({ type: 'pass' });
       return actions;
     }
@@ -158,36 +187,37 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
   actions.push({ type: 'pass' });
 
   const firstTurn = !a.spokenOnce.includes(seat);
+  const noPairYet = acceptedPairs(a).length === 0;
 
   // wachten: first speaker, very first action of the auction, no troel.
-  if (seat === a.firstSpeaker && a.bids.length === 0 && !a.troel && !p) {
+  if (seat === a.firstSpeaker && a.bids.length === 0 && !a.troel && noPairYet) {
     actions.push({ type: 'wachten' });
   }
 
-  // vraag: only while nothing stands at all, one proposal per player, not after wachten.
-  if (!highBid && !p && !(a.waiting && seat === a.firstSpeaker)) {
+  // vraag: only before any partnership forms and nothing else stands; one proposal per
+  // player; a suit already live cannot be re-proposed; not after wachten.
+  if (noPairYet && !highBid && !(a.waiting && seat === a.firstSpeaker)) {
     const proposedBefore = a.bids.some((b) => b.seat === seat && b.action.type === 'vraag');
     if (!proposedBefore) {
-      for (const suit of ['H', 'D', 'C', 'S'] as Suit[]) {
-        if (cardsOfSuit(hand, suit).length > 0) actions.push({ type: 'vraag', suit });
+      const liveSuits = new Set(openProposals(a).map((p) => p.suit));
+      for (const suit of SUITS) {
+        if (!liveSuits.has(suit) && cardsOfSuit(hand, suit).length > 0) actions.push({ type: 'vraag', suit });
       }
     }
   }
 
-  // meegaan: live unaccepted proposal by someone else, at the minimum outbidding level.
-  if (p && p.acceptedBy === undefined && !p.broken && p.seat !== seat) {
-    const level = minSamenOver(highBid);
-    if (level !== null) actions.push({ type: 'meegaan', tricks: level });
+  // meegaan: join any open proposal by another seat at the minimum level that takes the
+  // lead. Forming a second pair here starts a raise-war resolved by suit rank.
+  if (!isCommitted(a, seat)) {
+    for (const p of openProposals(a)) {
+      if (p.seat === seat) continue;
+      if (minSamenToLead(p.suit, highBid) !== null) actions.push({ type: 'meegaan', suit: p.suit });
+    }
   }
 
-  // alleen: only for the proposer of an unaccepted proposal, or the bound seat of a broken pair.
-  const boundToSuit: Suit | undefined =
-    p && p.acceptedBy === undefined && !p.broken && p.seat === seat
-      ? p.suit
-      : p && p.broken && p.boundSeat === seat
-        ? p.suit
-        : undefined;
-  if (boundToSuit) {
+  // alleen: an unaccepted proposer who never found a partner may still go alone in the suit.
+  const own = openProposals(a).find((p) => p.seat === seat);
+  if (own) {
     const level = minAlleenOver(highBid);
     if (level !== null) actions.push({ type: 'alleen', tricks: level });
   }
@@ -208,11 +238,11 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
   }
 
   // Abondance / solo slim: first speaking turn only, or raising one's own abondance in the same suit.
-  const own = ownAbondance(a, seat);
-  const abSuits: Suit[] = own
-    ? [own.suit!]
+  const ab = ownAbondance(a, seat);
+  const abSuits: Suit[] = ab
+    ? [ab.suit!]
     : firstTurn
-      ? (['H', 'D', 'C', 'S'] as Suit[]).filter((s) => cardsOfSuit(hand, s).length > 0)
+      ? SUITS.filter((s) => cardsOfSuit(hand, s).length > 0)
       : [];
   for (const suit of abSuits) {
     for (const tricks of [9, 10, 11, 12]) {
@@ -229,7 +259,7 @@ export function legalAuctionActions(state: GameState, seat: Seat): Action[] {
 function bidOfAction(action: Action): Bid {
   switch (action.type) {
     case 'vraag': return { kind: 'samen', tricks: 8, suit: action.suit };
-    case 'meegaan': return { kind: 'samen', tricks: action.tricks };
+    case 'meegaan': return { kind: 'samen', tricks: 8, suit: action.suit };
     case 'alleen': return { kind: 'alleen', tricks: action.tricks };
     case 'abondance': return { kind: 'abondance', tricks: action.tricks, suit: action.suit };
     case 'miserie':
@@ -258,32 +288,31 @@ function assertLegal(state: GameState, seat: Seat, action: Action): void {
 export function applyAuctionAction(state: GameState, seat: Seat, action: Action): void {
   assertLegal(state, seat, action);
   const a = state.auction;
-  const p = proposalOf(a);
 
-  const isPendingDecision = !!a.pending && a.pending.seat === seat;
-
-  if (isPendingDecision) {
-    const pending = a.pending!;
+  if (a.pending && a.pending.seat === seat) {
+    const pending = a.pending;
     a.pending = undefined;
+    const pair = pending.pairSeat !== undefined ? propBySeat(a, pending.pairSeat) : undefined;
     if (action.type === 'raise') {
-      const level = minSamenOver(a.high?.bid);
-      if (level === null) throw new GameError('cannot raise');
-      a.samenLevel = level;
+      const level = pair ? minSamenToLead(pair.suit, highExcludingPair(a, pair.seat)) : null;
+      if (!pair || level === null) throw new GameError('cannot raise');
+      pair.level = level;
       a.bids.push({ seat, action });
     } else if (action.type === 'parole') {
-      a.pending = { seat: p!.seat, kind: 'parole' };
       a.bids.push({ seat, action });
-      a.turn = p!.seat;
+      a.pending = { seat: pair!.seat, kind: 'parole', pairSeat: pair!.seat };
+      a.turn = pair!.seat;
       return;
     } else if (action.type === 'pass') {
-      // Partnership breaks; the other member stays bound to the suit.
-      const prop = p!;
-      prop.broken = true;
-      prop.boundSeat = pending.kind === 'parole' ? prop.acceptedBy : prop.seat;
-      a.passed.push(seat);
+      // Proposer declined after parole: the pair drops out entirely.
+      if (pair) {
+        pair.dropped = true;
+        if (pair.acceptedBy !== undefined && !a.passed.includes(pair.acceptedBy)) a.passed.push(pair.acceptedBy);
+      }
+      if (!a.passed.includes(seat)) a.passed.push(seat);
       a.bids.push({ seat, action });
     }
-    advanceOrResolve(state, seat);
+    settleTurn(state, seat);
     return;
   }
 
@@ -294,11 +323,9 @@ export function applyAuctionAction(state: GameState, seat: Seat, action: Action)
   switch (action.type) {
     case 'pass': {
       a.passed.push(seat);
-      // A proposer who passes withdraws their unaccepted proposal.
-      const prop = proposalOf(a);
-      if (prop && prop.seat === seat && prop.acceptedBy === undefined) {
-        a.proposal = undefined;
-      }
+      // An unaccepted proposer who passes withdraws their proposal.
+      const own = openProposals(a).find((p) => p.seat === seat);
+      if (own) own.dropped = true;
       break;
     }
     case 'wachten': {
@@ -306,20 +333,26 @@ export function applyAuctionAction(state: GameState, seat: Seat, action: Action)
       break;
     }
     case 'vraag': {
-      a.proposal = { seat, suit: action.suit };
+      a.proposals.push({ seat, suit: action.suit });
       break;
     }
     case 'meegaan': {
-      const prop = proposalOf(a)!;
-      prop.acceptedBy = seat;
-      a.samenLevel = action.tricks;
+      const target = openProposals(a).find((p) => p.suit === action.suit && p.seat !== seat);
+      if (!target) throw new GameError('no open proposal to join');
+      const level = minSamenToLead(target.suit, effectiveHigh(a)?.bid);
+      if (level === null) throw new GameError('cannot meegaan');
+      target.acceptedBy = seat;
+      target.level = level;
+      // Joining abandons the acceptor's own open proposal, if any.
+      const own = openProposals(a).find((p) => p.seat === seat);
+      if (own) own.dropped = true;
       break;
     }
     case 'alleen': {
-      const prop = proposalOf(a)!;
-      // The alleen bid replaces any proposal involvement.
-      a.high = { bid: { kind: 'alleen', tricks: action.tricks, suit: prop.suit }, seats: [seat] };
-      a.proposal = undefined;
+      const own = openProposals(a).find((p) => p.seat === seat);
+      if (!own) throw new GameError('no proposal to convert to alleen');
+      a.high = { bid: { kind: 'alleen', tricks: action.tricks, suit: own.suit }, seats: [seat] };
+      own.dropped = true;
       break;
     }
     case 'abondance':
@@ -332,27 +365,37 @@ export function applyAuctionAction(state: GameState, seat: Seat, action: Action)
       } else {
         a.high = { bid, seats: [seat] };
       }
-      // If a standing partnership is outbid and can still raise, the acceptor decides.
-      const prop = proposalOf(a);
-      if (
-        prop?.acceptedBy !== undefined &&
-        !prop.broken &&
-        a.samenLevel >= 8 &&
-        bidRank(bid) > bidRank({ kind: 'samen', tricks: a.samenLevel }) &&
-        minSamenOver(bid) !== null &&
-        !a.passed.includes(prop.acceptedBy)
-      ) {
-        a.pending = { seat: prop.acceptedBy, kind: 'pairRaise' };
-        a.turn = prop.acceptedBy;
-        return;
-      }
       break;
     }
     default:
       throw new GameError(`unexpected auction action ${action.type}`);
   }
 
-  advanceOrResolve(state, seat);
+  settleTurn(state, seat);
+}
+
+/** After a bid, hand the raise decision to a trailing pair if one can still climb;
+ *  otherwise advance the turn or resolve. */
+function settleTurn(state: GameState, lastActor: Seat): void {
+  if (maybeTriggerPairRaise(state)) return;
+  advanceOrResolve(state, lastActor);
+}
+
+/** If a standing pair has just been overtaken and can still raise, the acceptor must decide. */
+function maybeTriggerPairRaise(state: GameState): boolean {
+  const a = state.auction;
+  const high = effectiveHigh(a);
+  if (!high) return false;
+  for (const p of acceptedPairs(a)) {
+    const leads = high.seats.includes(p.seat) && high.seats.includes(p.acceptedBy!);
+    if (leads) continue; // this pair is on top
+    if (a.passed.includes(p.seat) || a.passed.includes(p.acceptedBy!)) continue; // already out
+    if (minSamenToLead(p.suit, highExcludingPair(a, p.seat)) === null) continue; // cannot climb
+    a.pending = { seat: p.acceptedBy!, kind: 'pairRaise', pairSeat: p.seat };
+    a.turn = p.acceptedBy!;
+    return true;
+  }
+  return false;
 }
 
 function advanceOrResolve(state: GameState, lastActor: Seat): void {

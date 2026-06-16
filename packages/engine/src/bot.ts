@@ -55,24 +55,29 @@ function chooseBid(view: PlayerView, actions: Action[]): Action {
   const best = bestSuit(hand);
   const find = (pred: (a: Action) => boolean) => actions.find(pred);
 
-  // Respond to a pending pair-raise decision conservatively.
+  // Respond to a pending raise decision conservatively.
   const raise = find((a) => a.type === 'raise');
-  if (raise || find((a) => a.type === 'parole')) {
-    if (raise && hcp >= 16) return raise;
-    return { type: 'pass' };
+  const parole = find((a) => a.type === 'parole');
+  if (parole) {
+    // Acceptor's call: raise only with a very strong hand, otherwise hand off.
+    return raise && hcp >= 16 ? raise : parole;
+  }
+  if (raise) {
+    // Proposer's call after a hand-off: raise only when strong, otherwise drop out.
+    return hcp >= 16 ? raise : { type: 'pass' };
   }
 
   // Abondance with a very long, strong suit.
   const abondance = find((a) => a.type === 'abondance' && a.tricks === 9 && a.suit === best.suit);
   if (abondance && best.length >= 7 && best.tops >= 2 && hcp >= 13) return abondance;
 
-  // Accept a proposal with decent trump support.
-  const meegaan = find((a) => a.type === 'meegaan');
-  if (meegaan && meegaan.type === 'meegaan') {
-    const suit = view.auction.proposal?.suit;
-    const support = suit ? cardsOfSuit(hand, suit).length : 0;
-    const strongEnough = support >= 3 && (hcp >= 8 || support >= 5);
-    if (strongEnough && (meegaan.tricks === 8 || (hcp >= 14 && support >= 4))) return meegaan;
+  // Accept the best-supported open proposal with decent trump support.
+  const meegaanOptions = actions
+    .flatMap((a) => (a.type === 'meegaan' ? [{ action: a, support: cardsOfSuit(hand, a.suit).length }] : []))
+    .sort((x, y) => y.support - x.support);
+  const bestMeegaan = meegaanOptions[0];
+  if (bestMeegaan && bestMeegaan.support >= 3 && (hcp >= 8 || bestMeegaan.support >= 5)) {
+    return bestMeegaan.action;
   }
 
   // Propose a long suit.

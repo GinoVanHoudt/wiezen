@@ -50,6 +50,8 @@ const NL: Dict = {
   'board.loadingCards': 'Kaarten laden…',
   'board.noTrump': 'zonder troef',
   'board.dealer': 'deler',
+  'board.troelTag': 'Troel',
+  'board.troelHint': 'troel staat op tafel — je kan enkel hoger bieden',
   'board.tricks': '{n} slagen',
   'board.trickWord': 'slagen',
   'board.lastTrick': 'Laatste slag',
@@ -180,6 +182,8 @@ const EN: Dict = {
   'board.loadingCards': 'Loading cards…',
   'board.noTrump': 'no trump',
   'board.dealer': 'dealer',
+  'board.troelTag': 'Troel',
+  'board.troelHint': 'troel is on the table — you can only overbid it',
   'board.tricks': '{n} tricks',
   'board.trickWord': 'tricks',
   'board.lastTrick': 'Last trick',
@@ -333,7 +337,7 @@ export function actionLabel(i18n: I18n, action: Action): string {
     case 'vraag':
       return `${i18n.t('bid.vraag')} ${SUIT_GLYPH[action.suit]}`;
     case 'meegaan':
-      return action.tricks === 8 ? i18n.t('bid.meegaan') : i18n.t('bid.meegaanFor', { n: action.tricks });
+      return `${i18n.t('bid.meegaan')} ${SUIT_GLYPH[action.suit]}`;
     case 'alleen':
       return `${i18n.t('bid.alleen')} ${action.tricks}`;
     case 'abondance':

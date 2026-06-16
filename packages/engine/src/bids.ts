@@ -1,4 +1,7 @@
-import { Bid, GameError } from './types.js';
+import { Bid, GameError, Suit } from './types.js';
+
+/** Suit rank for breaking ties between equal bids (RULES.md §1.2): ♥ > ♦ > ♣ > ♠. */
+const SUIT_RANK: Record<Suit, number> = { H: 3, D: 2, C: 1, S: 0 };
 
 /**
  * The bid ladder (RULES.md §2.4, pagat.com order, piccolo included).
@@ -63,6 +66,34 @@ export function minSamenOver(high: Bid | undefined): number | null {
 export function minAlleenOver(high: Bid | undefined): number | null {
   for (let level = 5; level <= 8; level++) {
     if (!high || bidRank({ kind: 'alleen', tricks: level }) > bidRank(high)) return level;
+  }
+  return null;
+}
+
+/**
+ * Does `candidate` outrank `high`? Higher `bidRank` wins; equal ranks only tie
+ * between two `samen` bids of the same trick count, broken by suit rank. Two
+ * pairs can therefore both sit at e.g. samen 13 with the higher suit leading.
+ */
+export function beats(candidate: Bid, high: Bid | undefined): boolean {
+  if (!high) return true;
+  const rc = bidRank(candidate);
+  const rh = bidRank(high);
+  if (rc !== rh) return rc > rh;
+  if (candidate.kind === 'samen' && high.kind === 'samen' && candidate.suit && high.suit) {
+    return SUIT_RANK[candidate.suit] > SUIT_RANK[high.suit];
+  }
+  return false;
+}
+
+/**
+ * Lowest samen level (8..13) in `joinSuit` that takes the lead over `high`
+ * (suit rank aware), or 8 if nothing stands. Null if even samen 13 can't lead.
+ * Used to form or raise a partnership.
+ */
+export function minSamenToLead(joinSuit: Suit, high: Bid | undefined): number | null {
+  for (let level = 8; level <= 13; level++) {
+    if (beats({ kind: 'samen', tricks: level, suit: joinSuit }, high)) return level;
   }
   return null;
 }

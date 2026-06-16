@@ -17,7 +17,7 @@ function samen8InHearts(): GameState {
   );
   s = applyAction(s, 1, { type: 'vraag', suit: 'H' });
   s = applyAction(s, 2, { type: 'pass' });
-  s = applyAction(s, 3, { type: 'meegaan', tricks: 8 });
+  s = applyAction(s, 3, { type: 'meegaan', suit: 'H' });
   s = applyAction(s, 0, { type: 'pass' });
   expect(s.phase).toBe('playing');
   return s;

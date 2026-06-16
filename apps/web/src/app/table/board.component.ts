@@ -18,6 +18,8 @@ interface SeatInfo {
   isDealer: boolean;
   isTurn: boolean;
   isDeclarer: boolean;
+  /** Holds (or partners) an auto-declared troel during bidding. */
+  isTroel: boolean;
   tricks: number;
   position: Position;
 }
@@ -101,7 +103,7 @@ function groupOf(action: Action): string {
   }
 }
 
-function chipFor(action: Action, i18n: I18n, trumpSuit: Suit | null = null): ActionChip {
+function chipFor(action: Action, i18n: I18n): ActionChip {
   const title = actionLabel(i18n, action);
   const suited = (suit: Suit, label = ''): ActionChip => ({
     action,
@@ -129,16 +131,16 @@ function chipFor(action: Action, i18n: I18n, trumpSuit: Suit | null = null): Act
     case 'troelKeep':
       return text(i18n.t('bid.troelKeep'));
     case 'meegaan': {
-      const base =
-        action.tricks === 8 ? i18n.t('bid.meegaan') : `${i18n.t('bid.meegaan')} ${action.tricks}`;
-      if (!trumpSuit) return text(base, 'primary');
+      // Each open proposal yields its own chip; the suit it joins becomes trump.
+      const base = i18n.t('bid.meegaan');
+      const suit = action.suit;
       return {
         action,
         label: base,
-        suitSym: SUIT_SYMBOL[trumpSuit],
-        red: trumpSuit === 'H' || trumpSuit === 'D',
+        suitSym: SUIT_SYMBOL[suit],
+        red: suit === 'H' || suit === 'D',
         variant: 'primary',
-        title: `${base} (${i18n.t('board.trumpWord')} ${SUIT_SYMBOL[trumpSuit]})`,
+        title: `${base} (${i18n.t('board.trumpWord')} ${SUIT_SYMBOL[suit]})`,
       };
     }
     case 'raise':
@@ -171,6 +173,8 @@ function bidParts(action: Action, i18n: I18n): { pre: string; suit: Suit | null;
   switch (action.type) {
     case 'vraag':
       return { pre: i18n.t('bid.vraag'), suit: action.suit, post: '' };
+    case 'meegaan':
+      return { pre: i18n.t('bid.meegaan'), suit: action.suit, post: '' };
     case 'abondance':
       return { pre: `${i18n.t('bid.abondance')} ${action.tricks}`, suit: action.suit, post: '' };
     case 'soloSlim':
@@ -262,6 +266,7 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
                 <div class="name">
                   {{ s.name }}
                   @if (s.isDealer) { <span class="badge">{{ i18n.t('board.dealer') }}</span> }
+                  @if (s.isTroel) { <span class="badge troel">{{ i18n.t('board.troelTag') }}</span> }
                 </div>
                 <div class="meta">{{ i18n.t('board.tricks', { n: s.tricks }) }}</div>
                 @if (lastTrick(); as lt) {
@@ -298,6 +303,7 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
                 <div class="name">
                   {{ s.name }}
                   @if (s.isDealer) { <span class="badge">{{ i18n.t('board.dealer') }}</span> }
+                  @if (s.isTroel) { <span class="badge troel">{{ i18n.t('board.troelTag') }}</span> }
                 </div>
                 <div class="meta">{{ i18n.t('board.tricks', { n: s.tricks }) }}</div>
                 @if (lastTrick(); as lt) {
@@ -310,6 +316,16 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
           }
         </div>
 
+        @if (troelInfo(); as tr) {
+          <div class="troel-banner">
+            <span class="troel-tag">{{ i18n.t('board.troelTag') }}</span>
+            <span class="players">{{ tr.players }}</span>
+            <span class="sep">·</span>
+            <span>{{ i18n.t('board.trumpWord') }}</span>
+            <span class="mini-card" [class.red]="tr.trumpRed">{{ tr.trumpSym }}</span>
+            <span class="hint">{{ i18n.t('board.troelHint') }}</span>
+          </div>
+        }
         @if (v.phase === 'bidding' || v.phase === 'troelTrump') {
           <div class="action-bar">
             @if (actionGroups().length > 0) {
@@ -430,6 +446,19 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
       font-size: 0.65rem; background: rgba(255, 255, 255, 0.2); padding: 0.05rem 0.35rem;
       border-radius: 0.3rem; margin-left: 0.3rem; vertical-align: middle;
     }
+    .badge.troel { background: #d4a017; color: #1c1c20; font-weight: 700; }
+    .troel-banner {
+      display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0.4rem;
+      margin: 0.3rem auto 0; padding: 0.35rem 0.75rem; border-radius: 0.5rem;
+      background: rgba(212, 160, 23, 0.14); border: 1px solid rgba(212, 160, 23, 0.5);
+    }
+    .troel-banner .troel-tag {
+      font-weight: 700; color: #d4a017; text-transform: uppercase;
+      font-size: 0.72rem; letter-spacing: 0.04em;
+    }
+    .troel-banner .players { font-weight: 600; }
+    .troel-banner .sep { opacity: 0.45; }
+    .troel-banner .hint { opacity: 0.7; font-style: italic; font-size: 0.85rem; }
     .trick {
       position: absolute; inset: 0; display: grid; place-items: center;
     }
@@ -552,13 +581,11 @@ export class BoardComponent {
 
   /** Bidding actions bucketed into contract families, ordered up the bid ladder. */
   protected readonly actionGroups = computed<ActionGroup[]>(() => {
-    // The standing vraag's suit becomes the trump when you go along with it.
-    const trumpSuit = this.view()?.auction.proposal?.suit ?? null;
     const buckets = new Map<string, ActionChip[]>();
     for (const action of this.legal()) {
       if (action.type === 'play' || action.type === 'discard') continue;
       const group = groupOf(action);
-      const chip = chipFor(action, this.i18n, trumpSuit);
+      const chip = chipFor(action, this.i18n);
       chip.explain = contractExplain(action, this.i18n);
       (buckets.get(group) ?? buckets.set(group, []).get(group)!).push(chip);
     }
@@ -614,6 +641,7 @@ export class BoardComponent {
     const t = this.table();
     if (!v) return [];
     const positions = ['bottom', 'left', 'top', 'right'] as const;
+    const troel = v.auction.troel;
     return t.players
       .map((p) => {
         const rel = (p.seat - v.seat + 4) % 4;
@@ -632,6 +660,7 @@ export class BoardComponent {
           isDealer: v.dealer === p.seat,
           isTurn,
           isDeclarer: v.contract?.declarers.includes(p.seat as 0 | 1 | 2 | 3) ?? false,
+          isTroel: v.phase === 'bidding' && !!troel && (troel.caller === p.seat || troel.partner === p.seat),
           tricks: v.play?.tricksWon[p.seat] ?? 0,
           position: positions[rel]!,
         };
@@ -756,6 +785,21 @@ export class BoardComponent {
     if (v.phase === 'troelTrump') return this.i18n.t('board.status.troelTrump');
     if (v.phase === 'discard') return this.i18n.t('board.status.discard');
     return '';
+  });
+
+  /** Announcement for an auto-declared troel during bidding (the app declares it
+   *  silently, so the human needs to be told who holds it and why bids are limited). */
+  protected readonly troelInfo = computed(() => {
+    const v = this.view();
+    const t = this.table();
+    if (!v || v.phase !== 'bidding' || !v.auction.troel) return null;
+    const tr = v.auction.troel;
+    const name = (seat: Seat) => t.players.find((p) => p.seat === seat)?.name ?? '…';
+    return {
+      players: `${name(tr.caller)} & ${name(tr.partner)}`,
+      trumpSym: SUIT_SYMBOL[tr.trump],
+      trumpRed: tr.trump === 'H' || tr.trump === 'D',
+    };
   });
 
   protected readonly waitingText = computed(() => {

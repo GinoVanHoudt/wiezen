@@ -42,7 +42,7 @@ export type Action =
   | { type: 'pass' }
   | { type: 'wachten' }
   | { type: 'vraag'; suit: Suit }
-  | { type: 'meegaan'; tricks: number }
+  | { type: 'meegaan'; suit: Suit } // join an open proposal; the level is computed (min to lead)
   | { type: 'alleen'; tricks: number }
   | { type: 'abondance'; tricks: number; suit: Suit }
   | { type: 'miserie'; variant: 'klein' | 'groot' | 'open' }
@@ -61,9 +61,8 @@ export interface BidRecord {
 }
 
 export type PendingKind =
-  | 'pairRaise' // partnership outbid: acceptor must raise / parole / pass
-  | 'parole' // proposer must take up the raise or pass
-  | 'boundSolo'; // partnership broke: the bound seat must go alleen in the agreed suit or pass
+  | 'pairRaise' // partnership outbid: acceptor must raise or hand off (parole)
+  | 'parole'; // proposer must take up the raise or pass (a pass drops the pair out)
 
 export interface Auction {
   turn: Seat;
@@ -73,10 +72,21 @@ export interface Auction {
   spokenOnce: Seat[];
   /** First speaker said 'wachten' and may later only accept or pass. */
   waiting: boolean;
-  /** Live proposal (vraag). Once accepted, the pair holds a standing samen bid. */
-  proposal?: { seat: Seat; suit: Suit; acceptedBy?: Seat };
-  /** Current partnership commitment level (8 once accepted, raised when outbid). */
-  samenLevel: number;
+  /**
+   * Proposals (vraag). Several suits may be live at once; the proposer seat is
+   * the stable key (one proposal per player). A proposal with `acceptedBy` set
+   * is a standing samen partnership committed to `level` tricks. Two accepted
+   * proposals may coexist and fight a raise-war (resolved by trick count, then
+   * suit rank).
+   */
+  proposals: {
+    seat: Seat;
+    suit: Suit;
+    acceptedBy?: Seat;
+    level?: number;
+    /** Pair declined the raise-war and is fully out. */
+    dropped?: boolean;
+  }[];
   /** Standing highest non-partnership bid, with its declarers (negatives can have several). */
   high?: { bid: Bid; seats: Seat[] };
   /** Mandatory troel declaration, set at deal time. */
@@ -89,7 +99,8 @@ export interface Auction {
     /** Card the partner must lead to trick 1 (4th ace or highest outside heart). */
     forcedLead: Card;
   };
-  pending?: { seat: Seat; kind: PendingKind };
+  /** `pairSeat` is the proposer seat identifying which pair must decide the raise. */
+  pending?: { seat: Seat; kind: PendingKind; pairSeat?: Seat };
   bids: BidRecord[];
 }
 
