@@ -1,11 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
-import { Action, Card, Suit, legalActionsForView, suitOf } from '@wiezen/engine';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Action, Card, PlayerView, Seat, Suit, legalActionsForView, suitOf } from '@wiezen/engine';
 import { ApiService } from '../core/api.service';
 import { I18n, actionLabel, contractName } from '../core/i18n';
 import { TableStore } from '../core/table-store.service';
 import { TableDoc } from '../core/types';
 import { CardComponent } from '../shared/card.component';
 import { SUIT_SYMBOL } from '../shared/cards';
+
+/** A table position relative to the viewing player (self always sits at the bottom). */
+type Position = 'bottom' | 'left' | 'top' | 'right';
 
 interface SeatInfo {
   seat: number;
@@ -15,8 +18,27 @@ interface SeatInfo {
   isTurn: boolean;
   isDeclarer: boolean;
   tricks: number;
-  position: 'bottom' | 'left' | 'top' | 'right';
+  position: Position;
 }
+
+/** A card currently rendered on the table, placed at its player's seat position. */
+interface PlayedCard {
+  seat: Seat;
+  card: Card;
+  position: Position;
+}
+
+/** Trick-resolution pacing: hold the completed trick, then sweep it to the winner. */
+const TRICK_HOLD_MS = 750;
+const TRICK_SWEEP_MS = 520;
+
+/** How far (and which way) a won trick's cards travel toward each seat's edge. */
+const SWEEP_VECTOR: Record<Position, { x: string; y: string }> = {
+  bottom: { x: '0', y: '14rem' },
+  top: { x: '0', y: '-14rem' },
+  left: { x: '-16rem', y: '0' },
+  right: { x: '16rem', y: '0' },
+};
 
 /** A single bidding choice rendered as a button in the action bar. */
 interface ActionChip {
@@ -239,9 +261,9 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
             }
           }
 
-          <div class="trick">
-            @for (t of trick(); track t.seat) {
-              <div class="trick-card {{ t.position }}">
+          <div class="trick" [style.--sweep-x]="sweep().x" [style.--sweep-y]="sweep().y">
+            @for (t of displayedTrick(); track t.card) {
+              <div class="trick-card {{ t.position }}" animate.enter="deal" animate.leave="sweep">
                 <app-card [card]="t.card" [trump]="isTrump(t.card)" />
               </div>
             }
@@ -307,11 +329,11 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
 
         <div class="hand">
           @for (c of v.hand; track c) {
-            <app-card [card]="c" [enabled]="playableCards().has(c) && !busy()" [trump]="isTrump(c)" (picked)="pickCard($event)" />
+            <app-card [card]="c" [enabled]="playableCards().has(c) && !busy() && !animating()" [trump]="isTrump(c)" (picked)="pickCard($event)" />
           }
         </div>
 
-        @if (v.phase === 'scored') {
+        @if (v.phase === 'scored' && !animating()) {
           <div class="overlay">
             <div class="panel">
               <h3>{{ i18n.t('board.handPlayed', { n: v.handNumber }) }}</h3>
@@ -392,11 +414,28 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
     .trick {
       position: absolute; inset: 0; display: grid; place-items: center;
     }
-    .trick-card { position: absolute; top: 50%; left: 50%; }
-    .trick-card.bottom { transform: translate(-50%, calc(-50% + 3.2rem)); }
-    .trick-card.top { transform: translate(-50%, calc(-50% - 3.2rem)); }
-    .trick-card.left { transform: translate(calc(-50% - 3rem), -50%); }
-    .trick-card.right { transform: translate(calc(-50% + 3rem), -50%); }
+    /* Cards are centred on the felt with margins (half the 3.4rem×4.8rem card) plus a
+       directional offset, leaving \`transform\` free for the deal-in / sweep animations. */
+    .trick-card { position: absolute; top: 50%; left: 50%; margin: -2.4rem 0 0 -1.7rem; }
+    .trick-card.bottom { margin-top: calc(-2.4rem + 3.2rem); --deal-x: 0; --deal-y: 9rem; }
+    .trick-card.top { margin-top: calc(-2.4rem - 3.2rem); --deal-x: 0; --deal-y: -9rem; }
+    .trick-card.left { margin-left: calc(-1.7rem - 3rem); --deal-x: -11rem; --deal-y: 0; }
+    .trick-card.right { margin-left: calc(-1.7rem + 3rem); --deal-x: 11rem; --deal-y: 0; }
+    /* Deal-in: a played card flies onto the table from its own seat (--deal-* per position).
+       Sweep: a won trick slides off toward the winner (--sweep-* set on .trick). */
+    .deal { animation: deal 360ms cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+    .sweep { animation: sweep ${TRICK_SWEEP_MS}ms ease-in both; }
+    @keyframes deal {
+      from { opacity: 0; transform: translate(var(--deal-x, 0), var(--deal-y, 0)) scale(0.85); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes sweep {
+      from { opacity: 1; transform: none; }
+      to { opacity: 0; transform: translate(var(--sweep-x, 0), var(--sweep-y, 0)) scale(0.6); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .deal, .sweep { animation-duration: 1ms; }
+    }
     .auction-log {
       font-size: 0.85rem; background: rgba(0, 0, 0, 0.3); padding: 0.6rem 1rem;
       border-radius: 0.5rem; max-width: 18rem; text-align: center;
@@ -578,19 +617,78 @@ export class BoardComponent {
     return entries.map((e) => ({ ...e, isLeader: hasLead && e.score === max }));
   });
 
-  protected readonly trick = computed(() => {
-    const v = this.view();
-    if (!v?.play) return [];
-    const positions = ['bottom', 'left', 'top', 'right'] as const;
-    const current = v.play.trick.length > 0
-      ? v.play.trick
-      : v.play.completedTricks[v.play.completedTricks.length - 1]?.cards ?? [];
-    return current.map((t) => ({
-      seat: t.seat,
-      card: t.card,
-      position: positions[(t.seat - v.seat + 4) % 4]!,
-    }));
-  });
+  /** The cards rendered on the felt right now. Driven by {@link reconcileTrick},
+   *  which paces trick resolution rather than mirroring the server state directly. */
+  protected readonly displayedTrick = signal<PlayedCard[]>([]);
+  /** True while a finished trick is being held + swept to its winner; the hand is
+   *  locked during this beat so a play can't interrupt the animation. */
+  protected readonly animating = signal(false);
+  /** Where the won trick sweeps to: the offset of the winner's seat from the centre.
+   *  Fed to the trick's --sweep-x/--sweep-y so every leaving card heads that way. */
+  protected readonly sweep = signal<{ x: string; y: string }>({ x: '0', y: '0' });
+
+  /** Completed tricks already shown/animated; lets us detect a fresh trick win. */
+  private shownCompleted = 0;
+  /** Bumped on every reconcile so stale setTimeout callbacks bail out. */
+  private trickSeq = 0;
+
+  constructor() {
+    // Translate the (instantly-updated) server view into a paced on-table display:
+    // a played card deals in, and a finished trick is held briefly then swept to
+    // the winner before the next trick appears.
+    effect(() => this.reconcileTrick(this.view()));
+  }
+
+  private positionOf(seat: Seat, viewer: Seat): Position {
+    const positions: readonly Position[] = ['bottom', 'left', 'top', 'right'];
+    return positions[(seat - viewer + 4) % 4]!;
+  }
+
+  private placeCards(cards: { seat: Seat; card: Card }[], viewer: Seat): PlayedCard[] {
+    return cards.map((t) => ({ seat: t.seat, card: t.card, position: this.positionOf(t.seat, viewer) }));
+  }
+
+  private reconcileTrick(v: PlayerView | null): void {
+    const seq = ++this.trickSeq; // any pending animation from a prior state is now stale
+
+    // Keep reconciling through 'scored' so the final trick still sweeps to its winner
+    // (the score overlay is held back until then, gated on animating()).
+    if (!v?.play || (v.phase !== 'playing' && v.phase !== 'scored')) {
+      this.displayedTrick.set([]);
+      this.animating.set(false);
+      this.shownCompleted = v?.play?.completedTricks.length ?? 0;
+      return;
+    }
+
+    const play = v.play;
+    const completed = play.completedTricks.length;
+
+    // Exactly one trick finished since we last looked: hold it, sweep it, then reveal
+    // whatever the next trick already holds (bots may have led in the same update; the
+    // final trick reveals nothing and uncovers the score overlay).
+    if (completed === this.shownCompleted + 1) {
+      const rec = play.completedTricks[this.shownCompleted]!;
+      this.shownCompleted = completed;
+      this.animating.set(true);
+      this.sweep.set(SWEEP_VECTOR[this.positionOf(rec.winner, v.seat)]);
+      this.displayedTrick.set(this.placeCards(rec.cards, v.seat));
+      setTimeout(() => {
+        if (seq !== this.trickSeq) return;
+        this.displayedTrick.set([]); // triggers animate.leave → cards sweep to the winner
+      }, TRICK_HOLD_MS);
+      setTimeout(() => {
+        if (seq !== this.trickSeq) return;
+        this.displayedTrick.set(this.placeCards(play.trick, v.seat));
+        this.animating.set(false);
+      }, TRICK_HOLD_MS + TRICK_SWEEP_MS);
+      return;
+    }
+
+    // New hand or a reconnect that skipped tricks: snap to the current trick, no animation.
+    this.shownCompleted = completed;
+    this.displayedTrick.set(this.placeCards(play.trick, v.seat));
+    this.animating.set(false);
+  }
 
   /** Structured contract banner (names · bid · troef) for the top-left header. */
   protected readonly contractInfo = computed(() => {
@@ -703,7 +801,7 @@ export class BoardComponent {
 
   protected pickCard(card: Card): void {
     const v = this.view();
-    if (!v) return;
+    if (!v || this.animating()) return;
     const type = v.phase === 'discard' ? 'discard' : 'play';
     void this.doAction({ type, card } as Action);
   }

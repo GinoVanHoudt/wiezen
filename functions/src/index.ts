@@ -28,7 +28,7 @@ initializeApp();
 getFirestore().settings({ ignoreUndefinedProperties: true });
 setGlobalOptions({ region: 'europe-west1', maxInstances: 5 });
 
-const BOT_NAMES = ['Bot Miel', 'Bot Rita', 'Bot Gust', 'Bot Mira'];
+const BOT_NAMES = ['Bot Miel', 'Bot Willy', 'Bot Rita', 'Bot Xavier'];
 
 function requireAuth(uid: string | undefined): string {
   if (!uid) throw new HttpsError('unauthenticated', 'sign in first');
