@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
-import { Action, Card, PlayerView, Seat, Suit, legalActionsForView, suitOf } from '@wiezen/engine';
+import { Action, Card, PlayerView, Seat, Suit, TrickRecord, legalActionsForView, suitOf } from '@wiezen/engine';
 import { ApiService } from '../core/api.service';
 import { I18n, actionLabel, contractName } from '../core/i18n';
 import { TableStore } from '../core/table-store.service';
 import { TableDoc } from '../core/types';
 import { CardComponent } from '../shared/card.component';
 import { SUIT_SYMBOL } from '../shared/cards';
+import { LastTrickComponent } from './last-trick.component';
 
 /** A table position relative to the viewing player (self always sits at the bottom). */
 type Position = 'bottom' | 'left' | 'top' | 'right';
@@ -66,6 +67,12 @@ interface ActionGroup {
 /** Contract families in bid-ladder order (stable ids; labels via i18n `group.*`).
  *  Empty groups are dropped at render time. */
 const GROUP_ORDER = ['doorgeven', 'troef', 'samen', 'alleen', 'miserie', 'abondance', 'soloslim'];
+
+/** Stable identity for a completed trick: its (unique-within-a-hand) cards plus winner.
+ *  Used so the `lastTrick` signal keeps one reference until a different trick lands. */
+function trickKey(t: TrickRecord | null): string {
+  return t ? `${t.winner}:${t.cards.map((c) => c.card).join(',')}` : '';
+}
 
 function groupOf(action: Action): string {
   switch (action.type) {
@@ -218,7 +225,7 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
 @Component({
   selector: 'app-board',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CardComponent],
+  imports: [CardComponent, LastTrickComponent],
   template: `
     @if (view(); as v) {
       <div class="board">
@@ -257,6 +264,11 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
                   @if (s.isDealer) { <span class="badge">{{ i18n.t('board.dealer') }}</span> }
                 </div>
                 <div class="meta">{{ i18n.t('board.tricks', { n: s.tricks }) }}</div>
+                @if (lastTrick(); as lt) {
+                  @if (lt.winner === s.seat) {
+                    <app-last-trick [trick]="lt" [names]="seatNames()" [trump]="trumpSuit()" [viewerSeat]="v.seat" />
+                  }
+                }
               </div>
             }
           }
@@ -288,6 +300,11 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
                   @if (s.isDealer) { <span class="badge">{{ i18n.t('board.dealer') }}</span> }
                 </div>
                 <div class="meta">{{ i18n.t('board.tricks', { n: s.tricks }) }}</div>
+                @if (lastTrick(); as lt) {
+                  @if (lt.winner === s.seat) {
+                    <app-last-trick [trick]="lt" [names]="seatNames()" [trump]="trumpSuit()" [viewerSeat]="v.seat" />
+                  }
+                }
               </div>
             }
           }
@@ -390,6 +407,8 @@ function contractExplain(action: Action, i18n: I18n): string | undefined {
     .player {
       position: absolute; text-align: center; padding: 0.4rem 0.8rem; border-radius: 0.5rem;
       background: rgba(0, 0, 0, 0.25); min-width: 8rem; border: 2px solid transparent;
+      /* Above the centred trick cards so an expanded last-trick panel isn't covered. */
+      z-index: 1;
     }
     /* Players declaring the contract get a gold border. */
     .player.declarer { border-color: #d4a017; }
@@ -558,6 +577,25 @@ export class BoardComponent {
   });
 
   protected readonly trumpSuit = computed(() => this.view()?.contract?.trump ?? null);
+
+  /** The most recently completed trick (cards + winner), shown beside the winner's
+   *  nameplate. Null until the first trick of the hand resolves. The custom equality
+   *  keeps the same object identity while the trick is unchanged, so unrelated view
+   *  updates (e.g. the next trick in progress) don't churn the input or snap an open
+   *  last-trick panel shut — only a genuinely new trick produces a fresh value. */
+  protected readonly lastTrick = computed<TrickRecord | null>(
+    () => this.view()?.play?.completedTricks.at(-1) ?? null,
+    { equal: (a, b) => trickKey(a) === trickKey(b) },
+  );
+
+  /** Player display names indexed by seat, for the last-trick card labels. */
+  protected readonly seatNames = computed<string[]>(() => {
+    const names: string[] = [];
+    for (const p of this.table().players) {
+      names[p.seat] = p.name ?? this.i18n.t('board.playerFallback', { n: p.seat + 1 });
+    }
+    return names;
+  });
 
   protected isTrump(card: Card): boolean {
     const trump = this.trumpSuit();
