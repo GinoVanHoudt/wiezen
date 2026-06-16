@@ -11,6 +11,7 @@ import { isRed, rankLabel, suitSymbol } from './cards';
       class="card"
       [class.red]="red()"
       [class.enabled]="enabled()"
+      [class.trump]="trump()"
       [class.small]="small()"
       [disabled]="!enabled()"
       (click)="picked.emit(card())"
@@ -37,10 +38,25 @@ import { isRed, rankLabel, suitSymbol } from './cards';
     }
     .card.small { width: 2.6rem; height: 3.7rem; }
     .card.red { color: #b3262e; }
-    .card.enabled { cursor: pointer; }
-    .card.enabled:hover { transform: translateY(-0.55rem); box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4); }
+    .card.enabled {
+      cursor: pointer;
+      transform: translateY(-0.3rem);
+      border-color: #2f9e44;
+      box-shadow: 0 0 0 2px #7ddf8a, 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+    .card.enabled:hover { transform: translateY(-0.65rem); box-shadow: 0 0 0 2px #9af0a6, 0 8px 14px rgba(0, 0, 0, 0.45); }
     .card:disabled { opacity: 0.92; }
-    .corner { font-size: 0.78rem; font-weight: 700; line-height: 1; display: block; }
+    .card.trump { background: linear-gradient(#fff8e1, #f5e6ae); border-color: #d4a017; }
+    .card.trump.enabled { border-color: #d4a017; }
+    .card.trump::after {
+      content: '★';
+      position: absolute;
+      top: 0.12rem;
+      right: 0.25rem;
+      font-size: 0.6rem;
+      color: #b8860b;
+    }
+    .corner { position: absolute; top: 0.15rem; left: 0.25rem; font-size: 0.78rem; font-weight: 700; line-height: 1; text-align: center; }
     .pip { position: absolute; bottom: 0.2rem; right: 0.3rem; font-size: 1.5rem; line-height: 1; }
     .card.small .pip { font-size: 1.1rem; }
   `,
@@ -48,6 +64,7 @@ import { isRed, rankLabel, suitSymbol } from './cards';
 export class CardComponent {
   readonly card = input.required<Card>();
   readonly enabled = input(false);
+  readonly trump = input(false);
   readonly small = input(false);
   readonly picked = output<Card>();
 

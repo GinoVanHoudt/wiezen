@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
-import { Action, Card, PlayerView, bidLabel, legalActionsForView } from '@wiezen/engine';
+import { Action, Card, bidLabel, legalActionsForView, suitOf } from '@wiezen/engine';
 import { ApiService } from '../core/api.service';
 import { TableStore } from '../core/table-store.service';
 import { TableDoc } from '../core/types';
@@ -52,7 +52,7 @@ interface SeatInfo {
           <div class="trick">
             @for (t of trick(); track t.seat) {
               <div class="trick-card {{ t.position }}">
-                <app-card [card]="t.card" [small]="true" />
+                <app-card [card]="t.card" [trump]="isTrump(t.card)" />
               </div>
             }
             @if (v.phase === 'bidding' || v.phase === 'troelTrump') {
@@ -95,7 +95,7 @@ interface SeatInfo {
 
         <div class="hand">
           @for (c of v.hand; track c) {
-            <app-card [card]="c" [enabled]="playableCards().has(c) && !busy()" (picked)="pickCard($event)" />
+            <app-card [card]="c" [enabled]="playableCards().has(c) && !busy()" [trump]="isTrump(c)" (picked)="pickCard($event)" />
           }
         </div>
 
@@ -157,11 +157,11 @@ interface SeatInfo {
     .trick {
       position: absolute; inset: 0; display: grid; place-items: center;
     }
-    .trick-card { position: absolute; }
-    .trick-card.bottom { bottom: 28%; left: 50%; transform: translateX(-50%); }
-    .trick-card.top { top: 22%; left: 50%; transform: translateX(-50%); }
-    .trick-card.left { left: 32%; top: 50%; transform: translateY(-50%); }
-    .trick-card.right { right: 32%; top: 50%; transform: translateY(-50%); }
+    .trick-card { position: absolute; top: 50%; left: 50%; }
+    .trick-card.bottom { transform: translate(-50%, calc(-50% + 3.2rem)); }
+    .trick-card.top { transform: translate(-50%, calc(-50% - 3.2rem)); }
+    .trick-card.left { transform: translate(calc(-50% - 3rem), -50%); }
+    .trick-card.right { transform: translate(calc(-50% + 3rem), -50%); }
     .auction-log {
       font-size: 0.85rem; background: rgba(0, 0, 0, 0.3); padding: 0.6rem 1rem;
       border-radius: 0.5rem; max-width: 18rem; text-align: center;
@@ -227,6 +227,13 @@ export class BoardComponent {
       .filter((a) => a.type !== 'play' && a.type !== 'discard')
       .map((action) => ({ action, label: actionLabel(action) })),
   );
+
+  protected readonly trumpSuit = computed(() => this.view()?.contract?.trump ?? null);
+
+  protected isTrump(card: Card): boolean {
+    const trump = this.trumpSuit();
+    return trump !== null && suitOf(card) === trump;
+  }
 
   protected readonly playableCards = computed<Set<Card>>(() => {
     const cards = this.legal().flatMap((a) =>

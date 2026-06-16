@@ -21,13 +21,24 @@ npm run test -w @wiezen/engine -- auction        # single test file (substring m
 npm run build -w @wiezen/engine    # REQUIRED after engine changes (see below)
 npm run build -w functions         # rebuild functions bundle (emulator picks it up)
 
-# Local dev (two terminals):
-npx firebase emulators:start --project demo-wiezen   # auth 9099, firestore 8080, functions 5001, UI 4000
-npm start -w web                   # ng serve on :4200, auto-connects to emulators in dev mode
-
 node scripts/e2e.mjs               # e2e smoke test (requires running emulators): plays 3 full
                                    # hands via callables, checks security rules + illegal moves
 ```
+
+## Running locally
+
+Prerequisites: Node ≥ 20 and Java (for the Firestore emulator — see gotchas below).
+First time: `npm install && npm run build` (the emulator serves functions from the built bundle).
+
+Then two terminals:
+
+```bash
+npx firebase emulators:start --project demo-wiezen   # auth 9099, firestore 8080, functions 5001, UI 4000
+npm start -w web                   # ng serve on http://localhost:4200, auto-connects to emulators in dev mode
+```
+
+To seat multiple human players, open extra browser profiles or incognito windows
+(anonymous auth gives each its own uid); empty seats can be filled with bots from the lobby.
 
 Deploy: `npm run build && npx firebase deploy` (needs a real project config pasted into
 `apps/web/src/app/core/firebase.service.ts` — the checked-in config is emulator-only, project id `demo-wiezen`).
